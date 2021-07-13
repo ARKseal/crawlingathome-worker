@@ -23,7 +23,7 @@ pip3 install torch==1.7.1$1 torchvision==0.8.2$1 -f https://download.pytorch.org
 pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir
 pip3 install -r ./requirements.txt --no-cache-dir
 
-pip3 install anyascii datasets ftfy pandas pycld2 regex tfr_image tractor trio ujson --no-cache-dir
+pip3 install datasets ftfy pandas pycld2 regex tfr_image tractor trio ujson --no-cache-dir
 pip3 install tensorflow --no-cache-dir
 
 #pip3 install git+https://github.com/openai/CLIP --no-cache-dir
