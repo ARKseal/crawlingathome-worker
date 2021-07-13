@@ -1,7 +1,6 @@
 import os
 from multiprocessing import cpu_count
 
-import anyascii
 import clip
 import datasets
 import torch
@@ -94,14 +93,14 @@ class CLIP:
             return indices
 
 
-clip = CLIP()
+clip_filter = CLIP()
 
 
 def df_clipfilter(df):
     sim_threshold = 0.3
     underaged_text = ["teen", "kid", "child", "baby"]
 
-    img_embedding, similarities = clip.preprocess_images(df)
+    img_embedding, similarities = clip_filter.preprocess_images(df)
     tmp_embed = copy(img_embedding)
     for i, img_embed in enumerate(tmp_embed):
         if similarities[i] < sim_threshold:
@@ -110,7 +109,7 @@ def df_clipfilter(df):
             continue
 
         # get most similar categories
-        nsfw_prob = clip.prob(img_embed, clip.categories)
+        nsfw_prob = clip_filter.prob(img_embed, clip.categories)
         df.at[i, "NSFW"] = "UNSURE"
         df.at[i, "similarity"] = similarities[i]
         if nsfw_prob[0] < 19 and nsfw_prob[1] < 19:
@@ -119,7 +118,7 @@ def df_clipfilter(df):
         elif nsfw_prob[0] >= 19 and nsfw_prob[1] >= 19:
             df.at[i, "NSFW"] = "NSFW"
 
-        underage_prob = clip.prob(img_embed, clip.underaged_categories)
+        underage_prob = clip_filter.prob(img_embed, clip.underaged_categories)
         if (
                 underage_prob[0] < 4
                 or underage_prob[1] < 4
@@ -129,7 +128,7 @@ def df_clipfilter(df):
             img_embedding.remove(img_embed)
             continue
 
-        animal_prob = clip.prob(img_embed, clip.animal_categories)
+        animal_prob = clip_filter.prob(img_embed, clip.animal_categories)
         if animal_prob[0] > 20:
             df.drop(i, inplace=True)
             img_embedding.remove(img_embed)
