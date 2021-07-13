@@ -5,10 +5,9 @@ import pickle
 import random
 import shutil
 import time
-from copy import copy
 from glob import glob
 from io import BytesIO
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
 import tractor
@@ -193,7 +192,6 @@ def dl_wat(valid_data, first_sample_id):
 
 
 def upload(source: str, client_type: str):
-    import os
     client_type = client_type.upper()
     target = 'gpujobs' if client_type == 'CPU' else 'CAH'
     options = '-rsh' if client_type == 'CPU' else '-zh'
@@ -225,11 +223,13 @@ if __name__ == "__main__":
 
     parser.add_argument('--name', '-n', type=str, default="ARKseal", help='Your name')
     parser.add_argument('--url', '-u', type=str, default="http://cah.io.community/", help='The Crawling Server')
+    parser.add_argument('--debug', '-d', type=bool, default=False, const=True)
 
     args = parser.parse_args()
 
-    from .clip_filter import run_inference
     import crawlingathome_client as cah
+
+    from .clip_filter import run_inference
 
     client = cah.init(
         url=args.url, nickname=args.name
@@ -283,6 +283,7 @@ if __name__ == "__main__":
             with open("shard.wat", "r") as infile:
                 parsed_data, dedupes = parse_wat(infile, start_index, lines)
             random.shuffle(parsed_data)
+
             print(f'[crawling@home] duplicates found: {dedupes}')
 
             client.log("Downloading images")
@@ -297,7 +298,7 @@ if __name__ == "__main__":
 
             client.log("Uploading Results")
 
-            upload(f'{output_folder}*{out_fname}*', client.type)
+            upload(f'*{out_fname}*', client.type)
 
             client.completeJob(filtered_df_len)
             end = time.time()
@@ -307,7 +308,7 @@ if __name__ == "__main__":
             print("[crawling@home] stopping crawler")
             break
         except Exception as ex:
-            print(f"[crawling@home] ERROR: {ex}")
+            print(f"[crawling@home] ERROR: {ex.with_traceback() if args.debug else ex}")
             if client.isAlive():
                 try:
                     client.log('Error, restarting job')
