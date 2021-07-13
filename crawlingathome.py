@@ -21,7 +21,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
 def chunk_using_generators(lst, n):
     for i in range(0, len(lst), n):
-        yield lst[i : i + n]
+        yield lst[i: i + n]
 
 
 def remove_bad_chars(text):
@@ -74,8 +74,8 @@ def parse_wat(content, start, line_count):
             if "alt" not in e:
                 continue
             url = e["url"]
-            
-            if any( x in url for x in [".svg", ".gif", "data:image", "javascript:"] ):
+
+            if any(x in url for x in [".svg", ".gif", "data:image", "javascript:"]):
                 continue
 
             try:
@@ -101,8 +101,8 @@ def parse_wat(content, start, line_count):
 
                 valid_data.append((url, alt_text, license))
     return [
-        t for t in {tuple(i) for i in valid_data}
-    ], dedupes # Remove duplicate tuple from list
+               t for t in {tuple(i) for i in valid_data}
+           ], dedupes  # Remove duplicate tuple from list
 
 
 def process_img_content(response, alt_text, license, sample_id):
@@ -176,11 +176,12 @@ def dl_wat(valid_data, first_sample_id):
     else:
         async def _runtractor():
             async with tractor.open_nursery() as n:
-                chunk_size = len(valid_data)//n_processes + 1
+                chunk_size = len(valid_data) // n_processes + 1
                 for i, data in enumerate(chunk_using_generators(valid_data, chunk_size)):
                     await n.run_in_actor(
-                        request_image, datas=data, start_sampleid = first_sample_id + i*chunk_size
+                        request_image, datas=data, start_sampleid=first_sample_id + i * chunk_size
                     )
+
         trio.run(_runtractor)
 
     for tmpf in glob(".tmp/*.json"):
@@ -191,127 +192,12 @@ def dl_wat(valid_data, first_sample_id):
     )
 
 
-def df_clipfilter(df):
-    sim_threshold = 0.3
-    underaged_text = ["teen", "kid", "child", "baby"]
-    import clip_filter
-
-    clip = clip_filter.CLIP()
-    img_embedding, similarities = clip.preprocess_images(df)
-    tmp_embed = copy(img_embedding)
-    for i, img_embed in enumerate(tmp_embed):
-        if similarities[i] < sim_threshold:
-            df.drop(i, inplace=True)
-            img_embedding.remove(img_embed)
-            continue
-
-        # get most similar categories
-        nsfw_prob = clip.prob(img_embed, clip.categories)
-        df.at[i, "NSFW"] = "UNSURE"
-        df.at[i, "similarity"] = similarities[i]
-        if nsfw_prob[0] < 19 and nsfw_prob[1] < 19:
-            df.at[i, "NSFW"] = "UNLIKELY"
-            continue
-        elif nsfw_prob[0] >= 19 and nsfw_prob[1] >= 19:
-            df.at[i, "NSFW"] = "NSFW"
-
-        underage_prob = clip.prob(img_embed, clip.underaged_categories)
-        if (
-            underage_prob[0] < 4
-            or underage_prob[1] < 4
-            or any(x in df.at[i, "TEXT"] for x in underaged_text)
-        ):
-            df.drop(i, inplace=True)
-            img_embedding.remove(img_embed)
-            continue
-
-        animal_prob = clip.prob(img_embed, clip.animal_categories)
-        if animal_prob[0] > 20:
-            df.drop(i, inplace=True)
-            img_embedding.remove(img_embed)
-
-    df.reset_index(drop=True, inplace=True)
-    return df, img_embedding
-
-
-def df_tfrecords(df, output_fname):
-    import tensorflow as tf
-    from tfr_image.utils import bytes_feature, int64_feature
-
-    def image_to_tfexample(sample_id, image_data, image_format, height, width, caption):
-        return tf.train.Example(
-            features=tf.train.Features(
-                feature={
-                    "sampleID": bytes_feature(sample_id),
-                    "image": bytes_feature(image_data),
-                    "format": bytes_feature(image_format),
-                    "label": bytes_feature(caption),
-                    "height": int64_feature(height),
-                    "width": int64_feature(width),
-                }
-            )
-        )
-
-    with tf.io.TFRecordWriter(output_fname) as tfrecord_writer:
-        for i in range(len(df)):
-            df_image = df.iloc[i]
-            image_fname = df_image["PATH"]
-            file_type = image_fname.split(".")[-1]
-            with tf.io.gfile.GFile(image_fname, "rb") as f:
-                image_data = f.read()
-            example = image_to_tfexample(
-                str(df_image["SAMPLE_ID"]).encode("utf_8"),
-                image_data,
-                file_type.encode("utf_8"),
-                df_image["HEIGHT"],
-                df_image["WIDTH"],
-                df_image["TEXT"].encode("utf_8"),
-            )
-            tfrecord_writer.write(example.SerializeToString())
-
-
-def upload_gdrive(output_filename):
-    import requests
-
-    client_id = (
-        "648172777761-onv1nc5f93nhlhf63flsq6onrmjphpfo.apps.googleusercontent.com"
-    )
-    client_secret = "HZ4Zw-_jVJ-3mwicz1NM5W5x"
-    refresh_token = "1//04N2Kysz1LObLCgYIARAAGAQSNwF-L9IrntHNWi2_nEVu2QX5fmlW0Ea0qA-ToBJLSdatDATYxiKcNFI8eZQ_fYN53gjF7b8MGmA"
-
-    def refresh_gdrive_token():
-        params = {
-            "grant_type": "refresh_token",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "refresh_token": refresh_token,
-        }
-
-        authorization_url = "https://www.googleapis.com/oauth2/v4/token"
-
-        r = requests.post(authorization_url, data=params)
-
-        if r.ok:
-            return r.json()["access_token"]
-        else:
-            return None
-
-    access_t = refresh_gdrive_token()
-    headers = {"Authorization": "Bearer " + access_t}
-    para = {
-        "name": output_filename.split("/")[-1],
-        "parents": ["1CIgcIR7nX2xNBPB577jwEqbbwxAJR_nt"],
-    }
-
-    files = {
-        "data": ("metadata", ujson.dumps(para), "application/json; charset=UTF-8"),
-        "file": ("application/zip", open(output_filename, "rb")),
-    }
-    requests.post(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-        headers=headers,
-        files=files,
-    )
+def upload(source: str, client_type: str):
+    import os
+    client_type = client_type.upper()
+    target = 'gpujobs' if client_type == 'CPU' else 'CAH'
+    options = '-rsh' if client_type == 'CPU' else '-zh'
+    return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
 class FileData:
@@ -334,7 +220,7 @@ class FileData:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = 'Crawling@Home Worker Script'
+        description='Crawling@Home Worker Script'
     )
 
     parser.add_argument('--name', '-n', type=str, default="ARKseal", help='Your name')
@@ -342,6 +228,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    from .clip_filter import run_inference
     import crawlingathome_client as cah
 
     client = cah.init(
@@ -372,11 +259,13 @@ if __name__ == "__main__":
 
             client.newJob()
             client.downloadShard()
+
             first_sample_id = int(client.start_id)
             last_sample_id = int(client.end_id)
             shard_of_chunk = client.shard_piece
 
-            out_fname = f"FIRST_SAMPLE_ID_IN_SHARD_{str(first_sample_id)}_LAST_SAMPLE_ID_IN_SHARD_{str(last_sample_id)}_{shard_of_chunk}"
+            out_fname = \
+                f"FIRST_SAMPLE_ID_IN_SHARD_{first_sample_id}_LAST_SAMPLE_ID_IN_SHARD_{last_sample_id}_{shard_of_chunk}"
             print(
                 f"[crawling@home] shard identification {out_fname}"
             )  # in case test fails, we need to remove bad data
@@ -393,43 +282,27 @@ if __name__ == "__main__":
 
             with open("shard.wat", "r") as infile:
                 parsed_data, dedupes = parse_wat(infile, start_index, lines)
-
-            print(f'[crawling@home] duplicates found: {dedupes}')
             random.shuffle(parsed_data)
+            print(f'[crawling@home] duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
             dlparse_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
-            print (f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
-            print (f"[crawling@home] Download efficiency {len(dlparse_df)/(time.time() - start)} img/sec")
+            print(f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+            print(f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
 
             client.log("Dropping NSFW keywords")
-            start2 = time.time()
-            filtered_df, img_embeddings = df_clipfilter(dlparse_df)
-            filtered_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
-            print (f"[crawling@home] CLIP filtered {len(filtered_df)} in {round(time.time() - start2)} seconds")
-            print (f"[crawling@home] CLIP efficiency {len(dlparse_df)/(time.time() - start2)} img/sec")
 
-            img_embeds_sampleid = {}
-            for i, img_embed_it in enumerate(img_embeddings):
-                dfid_index = filtered_df.at[i, "SAMPLE_ID"]
-                img_embeds_sampleid[str(dfid_index)] = img_embed_it
-            with open(f"{output_folder}image_embedding_dict-{out_fname}.pkl", "wb") as f:
-                pickle.dump(img_embeds_sampleid, f)
+            filtered_df_len = run_inference(dlparse_df, output_folder, out_fname)
 
-            client.log("Saving TFRs")
-            df_tfrecords(
-                filtered_df,
-                f"{output_folder}crawling_at_home_{out_fname}__00000-of-00001.tfrecord",
-            )
-            upload_gdrive(f"{output_folder}image_embedding_dict-{out_fname}.pkl")
-            upload_gdrive(
-                f"{output_folder}crawling_at_home_{out_fname}__00000-of-00001.tfrecord"
-            )
-            upload_gdrive(output_folder + out_fname + ".csv")
-            client._markjobasdone(len(filtered_df))
-            print(f"[crawling@home] job completed in {round(time.time() - start)} seconds")
-            print(f"[crawling@home] job efficiency {len(filtered_df)/(time.time() - start)} pairs/sec")
+            client.log("Uploading Results")
+
+            upload(f'{output_folder}*{out_fname}*', client.type)
+
+            client.completeJob(filtered_df_len)
+            end = time.time()
+            print(f"[crawling@home] job completed in {round(end - start)} seconds")
+            print(f"[crawling@home] job efficiency {filtered_df_len / (end - start)} pairs/sec")
         except KeyboardInterrupt:
             print("[crawling@home] stopping crawler")
             break
