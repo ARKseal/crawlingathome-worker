@@ -223,13 +223,13 @@ if __name__ == "__main__":
 
     parser.add_argument('--name', '-n', type=str, default="ARKseal", help='Your name')
     parser.add_argument('--url', '-u', type=str, default="http://cah.io.community/", help='The Crawling Server')
-    parser.add_argument('--debug', '-d', type=bool, default=False, action='store_true')
+    parser.add_argument('--debug', '-d', action='store_true')
 
     args = parser.parse_args()
 
     import crawlingathome_client as cah
 
-    from .clip_filter import run_inference
+    from clip_filter import run_inference
 
     client = cah.init(
         url=args.url, nickname=args.name
