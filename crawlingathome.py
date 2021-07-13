@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--name', '-n', type=str, default="ARKseal", help='Your name')
     parser.add_argument('--url', '-u', type=str, default="http://cah.io.community/", help='The Crawling Server')
-    parser.add_argument('--debug', '-d', type=bool, default=False, const=True)
+    parser.add_argument('--debug', '-d', type=bool, default=False, action='store_true')
 
     args = parser.parse_args()
 
