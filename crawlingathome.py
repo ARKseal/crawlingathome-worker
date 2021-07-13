@@ -304,6 +304,9 @@ if __name__ == "__main__":
             end = time.time()
             print(f"[crawling@home] job completed in {round(end - start)} seconds")
             print(f"[crawling@home] job efficiency {filtered_df_len / (end - start)} pairs/sec")
+
+            if args.debug:
+                break
         except KeyboardInterrupt:
             print("[crawling@home] stopping crawler")
             break
