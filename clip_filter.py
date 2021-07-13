@@ -52,7 +52,7 @@ class CLIP:
             self.preprocess(Image.open(path)).unsqueeze(0).to(device)
             for path in batch["PATH"]
         ]
-        max_texts = [anyascii(text) for text in batch["TEXT"]]
+        max_texts = [text for text in batch["TEXT"]]
         texts = clip.tokenize(max_texts, truncate_text=True).to(device)
 
         with torch.no_grad():
