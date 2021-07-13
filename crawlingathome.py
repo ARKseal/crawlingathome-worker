@@ -325,4 +325,8 @@ if __name__ == "__main__":
                     client.log('Error, restarting job')
                 except:
                     print("[crawling@home] Couldn't log to client:")
-    client.bye()
+    try:
+        if client.isAlive():
+            client.bye()
+    except:
+        pass
