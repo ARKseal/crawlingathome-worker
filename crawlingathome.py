@@ -229,7 +229,9 @@ if __name__ == "__main__":
 
     import crawlingathome_client as cah
 
+    print('[crawling@home] loading clip')
     from clip_filter import run_inference
+    print('\n[crawling@home] clip loaded')
 
     client = cah.init(
         url=args.url, nickname=args.name
