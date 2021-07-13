@@ -7,6 +7,7 @@ import shutil
 import time
 from glob import glob
 from io import BytesIO
+import traceback
 from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
@@ -17,6 +18,8 @@ from PIL import Image, ImageFile, UnidentifiedImageError
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
+import warnings
+warnings.filterwarnings("ignore")
 
 def chunk_using_generators(lst, n):
     for i in range(0, len(lst), n):
@@ -128,6 +131,7 @@ def process_img_content(response, alt_text, license, sample_id):
 
 async def request_image(datas, start_sampleid):
     import asks
+    asks.init('trio')
 
     tmp_data = []
     session = asks.Session(connections=165)
@@ -231,7 +235,7 @@ if __name__ == "__main__":
 
     print('[crawling@home] loading clip')
     from clip_filter import run_inference
-    print('\n[crawling@home] clip loaded')
+    print('\n[crawling@home] clip loaded\n')
 
     client = cah.init(
         url=args.url, nickname=args.name
@@ -300,7 +304,7 @@ if __name__ == "__main__":
 
             client.log("Uploading Results")
 
-            upload(f'*{out_fname}*', client.type)
+            upload(f'{output_folder}/*{out_fname}*', client.type)
 
             client.completeJob(filtered_df_len)
             end = time.time()
@@ -313,7 +317,9 @@ if __name__ == "__main__":
             print("[crawling@home] stopping crawler")
             break
         except Exception as ex:
-            print(f"[crawling@home] ERROR: {ex.with_traceback() if args.debug else ex}")
+            print(f"[crawling@home] ERROR: {ex}")
+            if args.debug:
+                traceback.print_exc()
             if client.isAlive():
                 try:
                     client.log('Error, restarting job')
