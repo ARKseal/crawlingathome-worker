@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt-get update && apt-get install -y git build-essential python3.7-dev python3-pip python3.7-venv libjpeg-dev
+apt-get update && apt-get install -y git build-essential python3.7-dev python3-pip python3.7-venv libtinfo5 libjpeg-dev
 python3 -m venv venv && . venv/bin/activate
 
 rm blocklist-domain.txt failed-domains.txt 5Mduplicates.txt crawlingathome.py clip_filter.py requirements.txt
