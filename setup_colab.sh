@@ -25,7 +25,7 @@ wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/update-scri
 
 wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/blocklist-domain.txt
 wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/failed-domains.txt
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/5Mduplicates.txt
+wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/bloom.bin
 
 pip3 install wheel --no-cache-dir
 
@@ -33,11 +33,6 @@ pip3 install torch==1.7.1$1 torchvision==0.8.2$1 -f https://download.pytorch.org
 
 pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir
 pip3 install -r ./requirements.txt --no-cache-dir
-
-pip3 install datasets ftfy pandas pycld2 regex tfr_image tractor trio ujson --no-cache-dir
-pip3 install tensorflow --no-cache-dir
-
-pip3 install clip-anytorch --no-cache-dir
 
 yes | pip3 uninstall pillow
 CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd --no-cache-dir
