@@ -225,22 +225,19 @@ if __name__ == "__main__":
     from clip_filter import run_inference
     print('\n[crawling@home] clip loaded\n')
 
-    print('[crawling@home] loading blocked urls')
-    blocked = set()
+    blocked_links = set()
     with open("blocklist-domain.txt") as f:
-        blocked = set(f.read().splitlines())
+        blocked_links = set(f.read().splitlines())
 
-    failed = set()
+    failed_links = set()
     with open("failed-domains.txt") as f:
-        failed = set(f.read().splitlines())
+        failed_links = set(f.read().splitlines())
 
-    blocked |= failed
-    del failed
+    blocked_links |= failed_links
+    del failed_links
 
-    bloom = BloomFilter(max_elements=10000000,
+    bloom_filter = BloomFilter(max_elements=10000000,
                         error_rate=0.01, filename=("bloom.bin", -1))
-
-    print('[crawling@home] blocked urls loaded')
 
     client = cah.init(
         url=args.url, nickname=args.name
@@ -281,6 +278,7 @@ if __name__ == "__main__":
                 f"[crawling@home] shard identification {out_fname}"
             )  # in case test fails, we need to remove bad data
             client.log("Processing shard")
+            start_processing = time.time()
 
             fd = FileData("shard.wat")
 
@@ -292,10 +290,11 @@ if __name__ == "__main__":
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines)
+                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked_links, bloom_filter)
             random.shuffle(parsed_data)
 
-            print(f'[crawling@home] duplicates found: {dedupes}')
+            end_processing = time.time()
+            print(f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
