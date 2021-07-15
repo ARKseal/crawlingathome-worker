@@ -231,7 +231,6 @@ def main(name, url, debug):
     )
 
     output_folder = "./save/"
-    csv_output_folder = output_folder
     img_output_folder = output_folder + "images/"
 
     while client.jobCount() > 0:
