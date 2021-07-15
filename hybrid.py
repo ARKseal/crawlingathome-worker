@@ -268,15 +268,30 @@ def main(name, url, debug):
 
             fd = FileData("shard.wat")
 
-            if shard_of_chunk == 0:
-                start_index = fd[0]
-            if shard_of_chunk == 1:
-                start_index = fd[int(len(fd) * 0.5)]
-
             lines = int(len(fd) * 0.5)
 
-            with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked_links, bloom_filter)
+            n_processes = mp.cpu_count()
+
+            if n_processes == 1:
+                if shard_of_chunk == 0:
+                    start_index = fd[0]
+                if shard_of_chunk == 1:
+                    start_index = fd[int(len(fd) * 0.5)]
+
+                parsed_data, dedupes = parse_wat('shard.wat', start_index, lines, blocked_links, bloom_filter)
+            else:
+                chunk_size = lines//n_processes - 1
+
+                if shard_of_chunk == 0:
+                    start_index_val = 0
+                if shard_of_chunk == 1:
+                    start_index_val = int(len(fd) * 0.5)
+
+                with mp.Pool(n_processes) as pool:
+                    output = pool.starmap(parse_wat, [ ('shard.wat', fd[start_index_val + i*chunk_size], chunk_size, blocked_links, bloom_filter) for i in range(n_processes)])
+
+                parsed_data, dedupes = None
+
             random.shuffle(parsed_data)
 
             end_processing = time.time()

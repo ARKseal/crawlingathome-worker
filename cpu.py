@@ -10,7 +10,7 @@ import warnings
 from glob import glob
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
-from uuid import uuid1
+from uuid import uuid1, uuid4
 
 import asks
 import ftfy
@@ -287,11 +287,18 @@ def main(name, url, debug):
             print(
                 f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
 
-            client.log("Uploading Results")
+            client.log("Uploading Temporary Job")
 
-            upload(f'{output_folder}/', client.type)
+            uid = uuid4().hex
+            shutil.copytree('save', uid)
 
-            client.completeJob()  # TODO
+            result = 1
+            while result:
+                result = upload(uid, client.type)
+
+            client.completeJob(f'rsync {uid}')
+            shutil.rmtree(uid)
+
             end = time.time()
             print(
                 f"[crawling@home] job completed in {round(end - start)} seconds")
