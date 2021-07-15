@@ -1,23 +1,34 @@
 import gc
+import hashlib
+import multiprocessing as mp
 import os
 import random
 import shutil
 import time
+import traceback
+import warnings
 from glob import glob
 from io import BytesIO
-import traceback
 from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
+import asks
+import ftfy
+import pandas as pd
+import pycld2 as cld2
 import tractor
 import trio
 import ujson
+from bloom_filter2 import BloomFilter
 from PIL import Image, ImageFile, UnidentifiedImageError
+
+asks.init('trio')
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
-import warnings
+
 warnings.filterwarnings("ignore")
+
 
 def chunk_using_generators(lst, n):
     for i in range(0, len(lst), n):
@@ -28,26 +39,8 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat(content, start, line_count):
-    import ftfy
-    import pycld2 as cld2
-
-    blocked = set()
-    with open("blocklist-domain.txt") as f:
-        blocked = set(f.read().splitlines())
-
-    failed = set()
-    with open("failed-domains.txt") as f:
-        failed = set(f.read().splitlines())
-
-    blocked |= failed
-    del failed
-
-    duplicates = set()
-    with open("5Mduplicates.txt") as f:
-        duplicates = set(f.read().splitlines())
+def parse_wat(content, start, line_count, blocked, bloom_filter):
     dedupes = 0
-
     valid_data = []
     content.seek(start)
     for _ in range(line_count):
@@ -95,14 +88,14 @@ def parse_wat(content, start, line_count):
                 if not url.startswith("http"):
                     url = urljoin(base_url, url)
 
-                if str(hash(url + alt_text)) in duplicates:
+                if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
                     dedupes += 1
                     continue
 
                 valid_data.append((url, alt_text, license))
     return [
-               t for t in {tuple(i) for i in valid_data}
-           ], dedupes  # Remove duplicate tuple from list
+        t for t in {tuple(i) for i in valid_data}
+    ], dedupes  # Remove duplicate tuple from list
 
 
 def process_img_content(response, alt_text, license, sample_id):
@@ -128,9 +121,6 @@ def process_img_content(response, alt_text, license, sample_id):
 
 
 async def request_image(datas, start_sampleid):
-    import asks
-    asks.init('trio')
-
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
@@ -164,10 +154,6 @@ async def request_image(datas, start_sampleid):
 
 
 def dl_wat(valid_data, first_sample_id):
-    import multiprocessing as mp
-
-    import pandas as pd
-
     # Download every image available
     processed_samples = []
     n_processes = mp.cpu_count()
@@ -189,7 +175,8 @@ def dl_wat(valid_data, first_sample_id):
         processed_samples.extend(ujson.load(open(tmpf)))
     return pd.DataFrame(
         processed_samples,
-        columns=["SAMPLE_ID", "PATH", "URL", "TEXT", "HEIGHT", "WIDTH", "LICENSE"],
+        columns=["SAMPLE_ID", "PATH", "URL",
+                 "TEXT", "HEIGHT", "WIDTH", "LICENSE"],
     )
 
 
@@ -224,6 +211,20 @@ def main(name, url, debug):
     print('[crawling@home] loading clip')
     from clip_filter import run_inference
     print('\n[crawling@home] clip loaded\n')
+
+    blocked_links = set()
+    with open("blocklist-domain.txt") as f:
+        blocked_links = set(f.read().splitlines())
+
+    failed_links = set()
+    with open("failed-domains.txt") as f:
+        failed_links = set(f.read().splitlines())
+
+    blocked_links |= failed_links
+    del failed_links
+
+    bloom_filter = BloomFilter(max_elements=10000000,
+                        error_rate=0.01, filename=("bloom.bin", -1))
 
     client = cah.init(
         url=url, nickname=name
@@ -264,6 +265,7 @@ def main(name, url, debug):
                 f"[crawling@home] shard identification {out_fname}"
             )  # in case test fails, we need to remove bad data
             client.log("Processing shard")
+            start_processing = time.time()
 
             fd = FileData("shard.wat")
 
@@ -275,20 +277,25 @@ def main(name, url, debug):
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines)
+                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked_links, bloom_filter)
             random.shuffle(parsed_data)
 
-            print(f'[crawling@home] duplicates found: {dedupes}')
+            end_processing = time.time()
+            print(f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
-            dlparse_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
-            print(f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
-            print(f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
+            dlparse_df.to_csv(output_folder + out_fname +
+                              ".csv", index=False, sep="|")
+            print(
+                f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+            print(
+                f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
 
             client.log("Dropping NSFW keywords")
 
-            filtered_df_len = run_inference(dlparse_df, output_folder, out_fname)
+            filtered_df_len = run_inference(
+                dlparse_df, output_folder, out_fname)
 
             client.log("Uploading Results")
 
@@ -296,8 +303,10 @@ def main(name, url, debug):
 
             client.completeJob(filtered_df_len)
             end = time.time()
-            print(f"[crawling@home] job completed in {round(end - start)} seconds")
-            print(f"[crawling@home] job efficiency {filtered_df_len / (end - start)} pairs/sec")
+            print(
+                f"[crawling@home] job completed in {round(end - start)} seconds")
+            print(
+                f"[crawling@home] job efficiency {filtered_df_len / (end - start)} pairs/sec")
 
             if debug:
                 break

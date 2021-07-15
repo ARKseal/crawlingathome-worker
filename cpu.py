@@ -1,23 +1,34 @@
 import gc
+import hashlib
+import multiprocessing as mp
 import os
 import random
 import shutil
 import time
+import traceback
+import warnings
 from glob import glob
 from io import BytesIO
-import traceback
 from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
+import asks
+import ftfy
+import pandas as pd
+import pycld2 as cld2
 import tractor
 import trio
 import ujson
+from bloom_filter2 import BloomFilter
 from PIL import Image, ImageFile, UnidentifiedImageError
+
+asks.init('trio')
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
-import warnings
+
 warnings.filterwarnings("ignore")
+
 
 def chunk_using_generators(lst, n):
     for i in range(0, len(lst), n):
@@ -28,12 +39,8 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat(content, start, line_count, blocked, duplicates):
-    import ftfy
-    import pycld2 as cld2
-
+def parse_wat(content, start, line_count, blocked, bloom_filter):
     dedupes = 0
-
     valid_data = []
     content.seek(start)
     for _ in range(line_count):
@@ -81,14 +88,14 @@ def parse_wat(content, start, line_count, blocked, duplicates):
                 if not url.startswith("http"):
                     url = urljoin(base_url, url)
 
-                if str(hash(url + alt_text)) in duplicates:
+                if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
                     dedupes += 1
                     continue
 
                 valid_data.append((url, alt_text, license))
     return [
-               t for t in {tuple(i) for i in valid_data}
-           ], dedupes  # Remove duplicate tuple from list
+        t for t in {tuple(i) for i in valid_data}
+    ], dedupes  # Remove duplicate tuple from list
 
 
 def process_img_content(response, alt_text, license, sample_id):
@@ -114,9 +121,6 @@ def process_img_content(response, alt_text, license, sample_id):
 
 
 async def request_image(datas, start_sampleid):
-    import asks
-    asks.init('trio')
-
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
@@ -150,10 +154,6 @@ async def request_image(datas, start_sampleid):
 
 
 def dl_wat(valid_data, first_sample_id):
-    import multiprocessing as mp
-
-    import pandas as pd
-
     # Download every image available
     processed_samples = []
     n_processes = mp.cpu_count()
@@ -175,7 +175,8 @@ def dl_wat(valid_data, first_sample_id):
         processed_samples.extend(ujson.load(open(tmpf)))
     return pd.DataFrame(
         processed_samples,
-        columns=["SAMPLE_ID", "PATH", "URL", "TEXT", "HEIGHT", "WIDTH", "LICENSE"],
+        columns=["SAMPLE_ID", "PATH", "URL",
+                 "TEXT", "HEIGHT", "WIDTH", "LICENSE"],
     )
 
 
@@ -271,25 +272,31 @@ def main(name, url, debug):
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked, duplicates)
+                parsed_data, dedupes = parse_wat(
+                    infile, start_index, lines, blocked, duplicates)
             random.shuffle(parsed_data)
 
             print(f'[crawling@home] duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
-            dlparse_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
-            print(f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
-            print(f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
+            dlparse_df.to_csv(output_folder + out_fname +
+                              ".csv", index=False, sep="|")
+            print(
+                f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+            print(
+                f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
 
             client.log("Uploading Results")
 
             upload(f'{output_folder}/', client.type)
 
-            client.completeJob() # TODO
+            client.completeJob()  # TODO
             end = time.time()
-            print(f"[crawling@home] job completed in {round(end - start)} seconds")
-            print(f"[crawling@home] job efficiency {len(dlparse_df) / (end - start)} pairs/sec")
+            print(
+                f"[crawling@home] job completed in {round(end - start)} seconds")
+            print(
+                f"[crawling@home] job efficiency {len(dlparse_df) / (end - start)} pairs/sec")
 
             if debug:
                 break

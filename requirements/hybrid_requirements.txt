@@ -1,10 +1,13 @@
 asks
+bloom-filter2
+clip-anytorch
 datasets
 ftfy
 pandas
 Pillow
 pycld2
 regex
+tensorflow
 tfr_image
 tractor
 trio
