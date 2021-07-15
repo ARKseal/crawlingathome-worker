@@ -28,24 +28,10 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat(content, start, line_count):
+def parse_wat(content, start, line_count, blocked, duplicates):
     import ftfy
     import pycld2 as cld2
 
-    blocked = set()
-    with open("blocklist-domain.txt") as f:
-        blocked = set(f.read().splitlines())
-
-    failed = set()
-    with open("failed-domains.txt") as f:
-        failed = set(f.read().splitlines())
-
-    blocked |= failed
-    del failed
-
-    duplicates = set()
-    with open("5Mduplicates.txt") as f:
-        duplicates = set(f.read().splitlines())
     dedupes = 0
 
     valid_data = []
@@ -228,11 +214,26 @@ def main(name, url, debug):
     output_folder = "./save/"
     img_output_folder = output_folder + "images/"
 
+    blocked = set()
+    with open("blocklist-domain.txt") as f:
+        blocked = set(f.read().splitlines())
+
+    failed = set()
+    with open("failed-domains.txt") as f:
+        failed = set(f.read().splitlines())
+
+    blocked |= failed
+    del failed
+
+    duplicates = set()
+    with open("5Mduplicates.txt") as f:
+        duplicates = set(f.read().splitlines())
+
     while client.jobCount() > 0:
         try:
             if not client.isAlive():
                 client = cah.init(
-                    url=url, nickname=name
+                    url=url, nickname=name, type='cpu'
                 )
 
             start = time.time()
@@ -270,7 +271,7 @@ def main(name, url, debug):
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines)
+                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked, duplicates)
             random.shuffle(parsed_data)
 
             print(f'[crawling@home] duplicates found: {dedupes}')

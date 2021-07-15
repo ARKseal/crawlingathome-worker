@@ -33,7 +33,7 @@ def main(name, url, debug):
     print('\n[crawling@home] clip loaded\n')
 
     client = cah.init(
-        url=url, nickname=name
+        url=url, nickname=name, type='gpu'
     )
 
     output_folder = "./save/"
