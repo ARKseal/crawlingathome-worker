@@ -39,63 +39,62 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat(content, start, line_count, blocked, bloom_filter):
+def parse_wat(filename, start, line_count, blocked, bloom_filter):
     dedupes = 0
     valid_data = []
-    content.seek(start)
-    for _ in range(line_count):
-        line = content.readline()
+    with open(filename, 'r') as content:
+        content.seek(start)
+        for _ in range(line_count):
+            line = content.readline()
 
-        if "IMG@" not in line:
-            continue
-
-        line_str = line.strip()
-        data = ujson.loads(line_str)
-
-        linklist = data["Envelope"]["Payload-Metadata"]["HTTP-Response-Metadata"][
-            "HTML-Metadata"
-        ]["Links"]
-
-        base_url = os.path.dirname(
-            data["Envelope"]["WARC-Header-Metadata"]["WARC-Target-URI"]
-        )  # get base url
-
-        license = "?"
-        for e in linklist:
-            if "url" in e and "creativecommons.org/licenses/" in e["url"]:
-                license = e["url"]
-            if "alt" not in e:
-                continue
-            url = e["url"]
-
-            if any(x in url for x in [".svg", ".gif", "data:image", "javascript:"]):
+            if "IMG@" not in line:
                 continue
 
-            try:
-                if urlparse(url).netloc in blocked:
+            line_str = line.strip()
+            data = ujson.loads(line_str)
+
+            linklist = data["Envelope"]["Payload-Metadata"]["HTTP-Response-Metadata"][
+                "HTML-Metadata"
+            ]["Links"]
+
+            base_url = os.path.dirname(
+                data["Envelope"]["WARC-Header-Metadata"]["WARC-Target-URI"]
+            )  # get base url
+
+            license = "?"
+            for e in linklist:
+                if "url" in e and "creativecommons.org/licenses/" in e["url"]:
+                    license = e["url"]
+                if "alt" not in e:
                     continue
-            except:
-                continue
+                url = e["url"]
 
-            alt_text = ftfy.fix_text(e["alt"].replace("\n", " ")).strip()
-            try:
-                _, _, details = cld2.detect(alt_text)
-            except Exception as e:
-                alt_text = remove_bad_chars(alt_text)
-                _, _, details = cld2.detect(alt_text)
-
-            if details[0][1] == "en":
-                if not url.startswith("http"):
-                    url = urljoin(base_url, url)
-
-                if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
-                    dedupes += 1
+                if any(x in url for x in [".svg", ".gif", "data:image", "javascript:"]):
                     continue
 
-                valid_data.append((url, alt_text, license))
-    return [
-        t for t in {tuple(i) for i in valid_data}
-    ], dedupes  # Remove duplicate tuple from list
+                try:
+                    if urlparse(url).netloc in blocked:
+                        continue
+                except:
+                    continue
+
+                alt_text = ftfy.fix_text(e["alt"].replace("\n", " ")).strip()
+                try:
+                    _, _, details = cld2.detect(alt_text)
+                except Exception as e:
+                    alt_text = remove_bad_chars(alt_text)
+                    _, _, details = cld2.detect(alt_text)
+
+                if details[0][1] == "en":
+                    if not url.startswith("http"):
+                        url = urljoin(base_url, url)
+
+                    if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
+                        dedupes += 1
+                        continue
+
+                    valid_data.append((url, alt_text, license))
+    return valid_data, dedupes  # Remove duplicate tuple from list
 
 
 def process_img_content(response, alt_text, license, sample_id):
@@ -224,7 +223,7 @@ def main(name, url, debug):
     del failed_links
 
     bloom_filter = BloomFilter(max_elements=10000000,
-                        error_rate=0.01, filename=("bloom.bin", -1))
+                               error_rate=0.01, filename=("bloom.bin", -1))
 
     client = cah.init(
         url=url, nickname=name
@@ -278,7 +277,8 @@ def main(name, url, debug):
                 if shard_of_chunk == 1:
                     start_index = fd[int(len(fd) * 0.5)]
 
-                parsed_data, dedupes = parse_wat('shard.wat', start_index, lines, blocked_links, bloom_filter)
+                parsed_data, dedupes = parse_wat(
+                    'shard.wat', start_index, lines, blocked_links, bloom_filter)
             else:
                 chunk_size = lines//n_processes - 1
 
@@ -288,14 +288,22 @@ def main(name, url, debug):
                     start_index_val = int(len(fd) * 0.5)
 
                 with mp.Pool(n_processes) as pool:
-                    output = pool.starmap(parse_wat, [ ('shard.wat', fd[start_index_val + i*chunk_size], chunk_size, blocked_links, bloom_filter) for i in range(n_processes)])
+                    output_all = pool.starmap(parse_wat, [(
+                        'shard.wat', fd[start_index_val + i*chunk_size], chunk_size, blocked_links, bloom_filter) for i in range(n_processes)])
 
-                parsed_data, dedupes = None
+                parsed_data = []
+                dedupes = 0
+                for valid_data, dedupe in output_all:
+                    parsed_data += valid_data
+                    dedupes += dedupe
+            
+            parsed_data = [t for t in {tuple(i) for i in valid_data}]
 
             random.shuffle(parsed_data)
 
             end_processing = time.time()
-            print(f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
+            print(
+                f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
