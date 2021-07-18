@@ -229,7 +229,7 @@ def main(name, url, debug):
         url=url, nickname=name, type='cpu'
     )
 
-    uid = 0
+    uid = ''
 
     while client.jobCount() > 0:
         try:
