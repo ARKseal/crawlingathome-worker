@@ -21,8 +21,8 @@ git clone "https://github.com/TheoCoombes/crawlingathome" crawlingathome_client
 
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/crawlingathome.py
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/clip_filter.py
-wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/hybrid.py
-wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/requirements/hybrid-requirements.txt -O requirements.txt
+wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/gpu.py
+wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/requirements/gpu-requirements.txt -O requirements.txt
 
 wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/blocklist-domain.txt
 wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/failed-domains.txt
@@ -37,6 +37,3 @@ pip3 install -r ./requirements.txt --no-cache-dir
 
 yes | pip3 uninstall pillow
 CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd --no-cache-dir
-
-yes | pip3 uninstall asks
-pip3 install git+https://github.com/rvencu/asks --no-cache-dir

@@ -1,0 +1,11 @@
+clip-anytorch
+datasets
+ftfy
+pandas
+Pillow
+pycld2
+regex
+tensorflow
+tfr_image
+trio
+ujson
