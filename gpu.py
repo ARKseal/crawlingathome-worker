@@ -25,17 +25,12 @@ def upload(source: str, client_type: str):
     return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
-def download(url, name):
-    client = cah.init(
-        url=url, nickname=name, type='gpu'
-    )
-
-    while client.jobCount() > 0:
+def download(url, name, debug, isnotebook):
+    while True:
         try:
-            if not client.isAlive():
-                client = cah.init(
-                    url=url, nickname=name, type='gpu'
-                )
+            client = cah.init(
+                url=url, nickname=name, type='gpu'
+            )
 
             start_dl = time.time()
 
@@ -55,10 +50,20 @@ def download(url, name):
 
             with open(f'{uid}/client.json', 'w') as f:
                 ujson.dump(client.dump(), f)
-        except cah.errors.InvalidURLError:
-            pass
+            if isnotebook:
+                time.sleep(25)
+        except (cah.errors.InvalidURLError, cah.errors.ZeroJobError):
+            try:
+                if client.isAlive():
+                    client.bye()
+            except:
+                pass
+            time.sleep(5)
+        except KeyboardInterrupt:
+            if client.isAlive():
+                client.bye()
         except Exception as ex:
-            print(f"[crawling@home] ERROR: {ex}")
+            print(f"[crawling@home] DLERROR: {ex}")
             if debug:
                 traceback.print_exc()
             if client.isAlive():
@@ -66,23 +71,18 @@ def download(url, name):
                     client.log('Error, restarting job')
                 except:
                     print("[crawling@home] Couldn't log to client:")
-    try:
-        if client.isAlive():
-            client.bye()
-    except:
-        pass
-
+  
 
 pool = None
 
 
-def downloader(name, url):
-    n_processes = mp.cpu_count()
-    pool = mp.Pool(1)
-    pool.starmap_async(download, [(url, name) for _ in range(1)])
+def downloader(name, url, debug, isnotebook, workers):
+    pool = mp.Pool(workers)
+    pool.starmap_async(
+        download, [(url, name, debug, isnotebook) for _ in range(1)])
 
 
-def main(name, url, debug):
+def main(name, url, debug, isnotebook, workers):
 
     if not Path("stats").exists():
         os.mkdir("stats")
@@ -94,7 +94,7 @@ def main(name, url, debug):
     def _worker(client_dict):
         while True:
             try:
-                client = cah.load( **client_dict )
+                client = cah.load(**client_dict)
                 output_folder = f"./{client.shard.split('rsync', 1)[-1].strip()}/"
 
                 start = time.time()
@@ -111,6 +111,8 @@ def main(name, url, debug):
 
                 dlparse_df = pandas.read_csv(
                     f'{output_folder}{out_fname}.csv', sep="|")
+                dlparse_df["PATH"] = dlparse_df.apply(
+                    lambda x: output_folder + x["PATH"].strip("save/"), axis=1)
 
                 client.log("Dropping NSFW keywords")
 
@@ -119,9 +121,9 @@ def main(name, url, debug):
 
                 client.log("Uploading Results")
 
-                #upload(f'{output_folder}/*{out_fname}*', client.type)
+                upload(f'{output_folder}/*{out_fname}*', client.type)
 
-                #client.completeJob(filtered_df_len)
+                client.completeJob(filtered_df_len)
                 client.bye()
                 end = time.time()
                 print(
@@ -147,16 +149,21 @@ def main(name, url, debug):
         pass
 
     print('start download')
-    downloader(name, url)
+    downloader(name, url, debug, isnotebook, workers)
     print('download started')
 
     while True:
         try:
             for client_dump in glob('./*/client.json'):
                 with open(client_dump, 'r') as f:
-                    client_dict = ujson.load(f)
-                    uid = client_dict['shard'].split('rsync', 1)[-1].strip()
+                    print(client_dump)
+                    try:
+                        client_dict = ujson.load(f)
+                    except ValueError:
+                        continue
+                    print(client_dict)
                     _worker(client_dict)
+                continue
         except KeyboardInterrupt:
             print('[crawling@home] stopping worker')
             if hasattr(pool, 'terminate'):
@@ -173,10 +180,10 @@ def main(name, url, debug):
                     traceback.print_exc()
             except:
                 break
-
+    time.sleep(10)  # wait for in-progress rsync job to complete
     for client in glob('./*/client.json'):
         with open(client) as f:
-            client = cah.load(**ujson.load(f))
+            client = cah.load( **ujson.load(f) )
             client.bye()
     for folder in glob('./*'):
         if 'crawlingathome_client' in folder or 'venv' in folder or 'stats' in folder:
