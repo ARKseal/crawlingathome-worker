@@ -124,10 +124,10 @@ async def request_image(datas, start_sampleid):
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15",
+        "User-Agent": "Crawling at Home Project (http://cah.io.community)",
         "Accept-Language": "en-US",
         "Accept-Encoding": "gzip, deflate",
-        "Referer": "https://www.google.com/",
+        "Referer": "https://commoncrawl.org",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 

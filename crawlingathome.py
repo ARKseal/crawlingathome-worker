@@ -10,6 +10,7 @@ if __name__ == '__main__':
     parser.add_argument('--debug', '-d', action='store_true')
 
     group = parser.add_mutually_exclusive_group()
+    group.add_argument('--hybrid', '-y', action='store_true')
     group.add_argument('--cpu', '-c', action='store_true')
     group.add_argument('--gpu', '-g', action='store_true')
 

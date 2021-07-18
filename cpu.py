@@ -10,7 +10,7 @@ import warnings
 from glob import glob
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
-from uuid import uuid1
+from uuid import uuid1, uuid4
 
 import asks
 import ftfy
@@ -124,10 +124,10 @@ async def request_image(datas, start_sampleid):
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15",
+        "User-Agent": "Crawling at Home Project (http://cah.io.community)",
         "Accept-Language": "en-US",
         "Accept-Encoding": "gzip, deflate",
-        "Referer": "https://www.google.com/",
+        "Referer": "https://commoncrawl.org",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
@@ -223,11 +223,13 @@ def main(name, url, debug):
     del failed_links
 
     bloom_filter = BloomFilter(max_elements=10000000,
-                        error_rate=0.01, filename=("bloom.bin", -1))
+                               error_rate=0.01, filename=("bloom.bin", -1))
 
     client = cah.init(
         url=url, nickname=name, type='cpu'
     )
+
+    uid = 0
 
     while client.jobCount() > 0:
         try:
@@ -240,6 +242,10 @@ def main(name, url, debug):
 
             if os.path.exists(output_folder):
                 shutil.rmtree(output_folder)
+
+            if os.path.exists(uid):
+                shutil.rmtree(uid)
+
             if os.path.exists(".tmp"):
                 shutil.rmtree(".tmp")
 
@@ -272,26 +278,39 @@ def main(name, url, debug):
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked_links, bloom_filter)
+                parsed_data, dedupes = parse_wat(
+                    infile, start_index, lines, blocked_links, bloom_filter)
+
+            parsed_df = pd.DataFrame(parsed_data, columns=["URL","TEXT","LICENSE"])
+            parsed_df.to_csv(output_folder + out_fname + "_parsed.csv", index=False, sep="|")
+
             random.shuffle(parsed_data)
 
             end_processing = time.time()
-            print(f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
+            print(
+                f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
 
             client.log("Downloading images")
             dlparse_df = dl_wat(parsed_data, first_sample_id)
-            dlparse_df.to_csv(output_folder + out_fname +
-                              ".csv", index=False, sep="|")
+            dlparse_df.to_csv(f'{output_folder}{out_fname}.csv', index=False, sep="|")
+            dlparse_df.to_csv(f'{output_folder}{out_fname}_unfiltered.csv', index=False, sep="|")
+
             print(
                 f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
             print(
                 f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
 
-            client.log("Uploading Results")
+            client.log("Uploading Temporary Job")
 
-            upload(f'{output_folder}/', client.type)
+            uid = uuid4().hex
+            shutil.copytree('save', uid)
 
-            client.completeJob()  # TODO
+            result = 1
+            while result:
+                result = upload(uid, client.type)
+
+            client.completeJob(f'rsync {uid}')
+
             end = time.time()
             print(
                 f"[crawling@home] job completed in {round(end - start)} seconds")
