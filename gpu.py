@@ -59,6 +59,8 @@ def download(url, name):
             pass
         except Exception as ex:
             print(f"[crawling@home] ERROR: {ex}")
+            if debug:
+                traceback.print_exc()
             if client.isAlive():
                 try:
                     client.log('Error, restarting job')
@@ -74,13 +76,16 @@ def download(url, name):
 pool = None
 
 
-def downloader(url, name):
+def downloader(name, url):
     n_processes = mp.cpu_count()
-    pool = mp.Pool(n_processes)
-    pool.starmap_async(download, [(url, name) for _ in range(4)])
+    pool = mp.Pool(1)
+    pool.starmap_async(download, [(url, name) for _ in range(1)])
 
 
-def main(name, url, debug, isnotebook):
+def main(name, url, debug):
+
+    if not Path("stats").exists():
+        os.mkdir("stats")
 
     print('[crawling@home] loading clip')
     from clip_filter import run_inference
@@ -114,9 +119,10 @@ def main(name, url, debug, isnotebook):
 
                 client.log("Uploading Results")
 
-                upload(f'{output_folder}/*{out_fname}*', client.type)
+                #upload(f'{output_folder}/*{out_fname}*', client.type)
 
-                client.completeJob(filtered_df_len)
+                #client.completeJob(filtered_df_len)
+                client.bye()
                 end = time.time()
                 print(
                     f"[crawling@home] job completed in {round(end - start)} seconds")
@@ -140,6 +146,10 @@ def main(name, url, debug, isnotebook):
             pass
         pass
 
+    print('start download')
+    downloader(name, url)
+    print('download started')
+
     while True:
         try:
             for client_dump in glob('./*/client.json'):
@@ -149,14 +159,20 @@ def main(name, url, debug, isnotebook):
                     _worker(client_dict)
         except KeyboardInterrupt:
             print('[crawling@home] stopping worker')
-            if hasattr(pool, 'close'):
-                pool.close()
+            if hasattr(pool, 'terminate'):
+                print('terminating pool')
+                pool.terminate()
+                print('joining pool')
+                pool.join()
             print('[crawling@home] stopped worker, cleaning workspace')
             break
         except Exception as ex:
-            print(f'[crawling@home] ERROR: {ex}')
-            if debug:
-                traceback.print_exc()
+            try:
+                print(f'[crawling@home] ERROR: {ex}')
+                if debug:
+                    traceback.print_exc()
+            except:
+                break
 
     for client in glob('./*/client.json'):
         with open(client) as f:
