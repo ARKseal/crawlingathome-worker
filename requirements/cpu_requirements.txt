@@ -1,0 +1,11 @@
+asks
+bloom-filter2
+datasets
+ftfy
+pandas
+Pillow
+pycld2
+regex
+tractor
+trio
+ujson

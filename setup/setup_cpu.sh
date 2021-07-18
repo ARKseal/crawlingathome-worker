@@ -30,8 +30,6 @@ wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blo
 
 pip3 install wheel --no-cache-dir
 
-pip3 install torch==1.7.1 torchvision==0.8.2 -f https://download.pytorch.org/whl/torch_stable.html --no-cache-dir
-
 pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir
 pip3 install -r ./requirements.txt --no-cache-dir
 
