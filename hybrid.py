@@ -187,6 +187,25 @@ def upload(source: str, client_type: str):
     return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
+iters = 0
+
+
+def updateFilters(bloom=None, blocked=None):
+    shutil.rmtree('blocklists')
+
+    result = 1
+    while result:
+        os.system("rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
+
+    bloom = BloomFilter(max_elements=80_000_000,
+                        error_rate=0.01, filename=("blocklists/bloom.bin", -1))
+
+    blocked = BloomFilter(max_elements=10_000_000, error_rate=0.01, filename=(
+        "blocklists/failed-domains.bin", -1))
+
+    return bloom, blocked
+
+
 class FileData:
     def __init__(self, filename):
         self._filename = filename
@@ -212,19 +231,7 @@ def main(name, url, debug):
     from clip_filter import run_inference
     print('\n[crawling@home] clip loaded\n')
 
-    blocked_links = set()
-    with open("blocklist-domain.txt") as f:
-        blocked_links = set(f.read().splitlines())
-
-    failed_links = set()
-    with open("failed-domains.txt") as f:
-        failed_links = set(f.read().splitlines())
-
-    blocked_links |= failed_links
-    del failed_links
-
-    bloom_filter = BloomFilter(max_elements=10000000,
-                        error_rate=0.01, filename=("bloom.bin", -1))
+    bloom_filter, blocked_links = updateFilters()
 
     client = cah.init(
         url=url, nickname=name
@@ -239,6 +246,9 @@ def main(name, url, debug):
                 client = cah.init(
                     url=url, nickname=name
                 )
+
+            bloom_filter, blocked_links = updateFilters(
+                bloom=bloom_filter, blocked=blocked_links)
 
             start = time.time()
 
@@ -276,20 +286,31 @@ def main(name, url, debug):
             lines = int(len(fd) * 0.5)
 
             with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(infile, start_index, lines, blocked_links, bloom_filter)
+                parsed_data, dedupes = parse_wat(
+                    infile, start_index, lines, blocked_links, bloom_filter)
+
+            parsed_df = pd.DataFrame(parsed_data, columns=[
+                                     "URL", "TEXT", "LICENSE"])
+
+            num_links = len(parsed_df)
+            del parsed_df
+
             random.shuffle(parsed_data)
 
             end_processing = time.time()
-            print(f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
+            print(
+                f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
 
             client.log("Downloading images")
+            start_dl = time.time()
             dlparse_df = dl_wat(parsed_data, first_sample_id)
-            dlparse_df.to_csv(output_folder + out_fname +
-                              ".csv", index=False, sep="|")
+            dlparse_df.to_csv(
+                f'{output_folder}{out_fname}.csv', index=False, sep="|")
+            end_dl = time.time()
             print(
-                f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+                f"[crawling@home] Downloaded {len(dlparse_df)} images out of {num_links} links in {(end_dl - start_dl):.1f} seconds")
             print(
-                f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
+                f"[crawling@home] Download efficiency: {(len(dlparse_df) / (end_dl - start_dl)):.2f} img/sec OR {(num_links / (end_dl - start_dl)):.2f} links/sec")
 
             client.log("Dropping NSFW keywords")
 
@@ -303,9 +324,9 @@ def main(name, url, debug):
             client.completeJob(filtered_df_len)
             end = time.time()
             print(
-                f"[crawling@home] job completed in {round(end - start)} seconds")
+                f"[crawling@home] job completed in {(end - start):.1f} seconds")
             print(
-                f"[crawling@home] job efficiency {filtered_df_len / (end - start)} pairs/sec")
+                f"[crawling@home] job efficiency {(filtered_df_len / (end - start)):.2f} pairs/sec")
 
             if debug:
                 break

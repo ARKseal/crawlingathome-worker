@@ -11,7 +11,7 @@ sudo chmod +x /usr/bin/protoc
 rm -rf protoc-3.17.3-linux-x86_64.zip bin include readme.txt
 
 cd $CURRDIR
-sudo apt-get update && sudo apt-get install -y git build-essential python3-dev python3-pip python3-venv libtinfo5 libjpeg-dev
+sudo apt-get update && sudo apt-get install -y git build-essential python3-dev python3-pip python3-venv libtinfo5 libjpeg-dev rsync
 python3 -m venv venv && . venv/bin/activate
 
 rm crawlingathome.py clip_filter.py hybrid.py requirements.txt blocklist-domain.txt failed-domains.txt bloom.bin
@@ -23,10 +23,6 @@ wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-wo
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/clip_filter.py
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/hybrid.py
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/requirements/hybrid-requirements.txt -O requirements.txt
-
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/blocklist-domain.txt
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/failed-domains.txt
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/bloom.bin
 
 pip3 install wheel --no-cache-dir
 

@@ -281,24 +281,32 @@ def main(name, url, debug):
                 parsed_data, dedupes = parse_wat(
                     infile, start_index, lines, blocked_links, bloom_filter)
 
-            parsed_df = pd.DataFrame(parsed_data, columns=["URL","TEXT","LICENSE"])
-            parsed_df.to_csv(output_folder + out_fname + "_parsed.csv", index=False, sep="|")
+            parsed_df = pd.DataFrame(parsed_data, columns=[
+                                     "URL", "TEXT", "LICENSE"])
+            parsed_df.to_csv(output_folder + out_fname +
+                             "_parsed.csv", index=False, sep="|")
+
+            num_links = len(parsed_df)
+            del parsed_df
 
             random.shuffle(parsed_data)
 
             end_processing = time.time()
             print(
-                f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
+                f'[crawling@home] Processed shard in {(end_processing-start_processing):.1f} seconds, duplicates found: {dedupes}')
 
             client.log("Downloading images")
+            start_dl = time.time()
             dlparse_df = dl_wat(parsed_data, first_sample_id)
-            dlparse_df.to_csv(f'{output_folder}{out_fname}.csv', index=False, sep="|")
-            dlparse_df.to_csv(f'{output_folder}{out_fname}_unfiltered.csv', index=False, sep="|")
-
+            dlparse_df.to_csv(
+                f'{output_folder}{out_fname}.csv', index=False, sep="|")
+            dlparse_df.to_csv(
+                f'{output_folder}{out_fname}_unfiltered.csv', index=False, sep="|")
+            end_dl = time.time()
             print(
-                f"[crawling@home] Downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+                f"[crawling@home] Downloaded {len(dlparse_df)} images out of {num_links} links in {(end_dl - start_dl):.1f} seconds")
             print(
-                f"[crawling@home] Download efficiency {len(dlparse_df) / (time.time() - start)} img/sec")
+                f"[crawling@home] Download efficiency: {(len(dlparse_df) / (end_dl - start_dl)):.2f} img/sec OR {(num_links / (end_dl - start_dl)):.2f} links/sec")
 
             client.log("Uploading Temporary Job")
 
@@ -313,9 +321,9 @@ def main(name, url, debug):
 
             end = time.time()
             print(
-                f"[crawling@home] job completed in {round(end - start)} seconds")
+                f"[crawling@home] job completed in {(end - start):.1f} seconds")
             print(
-                f"[crawling@home] job efficiency {len(dlparse_df) / (end - start)} pairs/sec")
+                f"[crawling@home] job efficiency {(len(dlparse_df) / (end - start)):.2f} pairs/sec")
 
             if debug:
                 break

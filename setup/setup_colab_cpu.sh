@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt-get update && apt-get install -y git build-essential python3.7-dev python3-pip python3.7-venv libtinfo5 libjpeg-dev
+apt-get update && apt-get install -y git build-essential python3.7-dev python3-pip python3.7-venv libtinfo5 libjpeg-dev rsync
 python3 -m venv venv && . venv/bin/activate
 
 rm crawlingathome.py clip_filter.py cpu.py requirements.txt blocklist-domain.txt failed-domains.txt bloom.bin
@@ -12,10 +12,6 @@ wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-wo
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/clip_filter.py
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/cpu.py
 wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/requirements/cpu_requirements.txt -O requirements.txt
-
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/blocklist-domain.txt
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/failed-domains.txt
-wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/main/blocklists/bloom.bin
 
 pip3 install wheel --no-cache-dir
 
