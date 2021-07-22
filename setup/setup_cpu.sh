@@ -14,7 +14,8 @@ cd $CURRDIR
 sudo apt-get update && sudo apt-get install -y git build-essential python3-dev python3-pip python3-venv libtinfo5 libjpeg-dev rsync
 python3 -m venv venv && . venv/bin/activate
 
-rm crawlingathome.py clip_filter.py cpu.py requirements.txt blocklist-domain.txt failed-domains.txt bloom.bin
+rm crawlingathome.py clip_filter.py cpu.py requirements.txt
+rm -r blocklists
 rm -r crawlingathome_client
 
 git clone "https://github.com/TheoCoombes/crawlingathome" crawlingathome_client

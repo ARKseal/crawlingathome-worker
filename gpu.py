@@ -71,7 +71,7 @@ def download(url, name, debug, isnotebook):
                     client.log('Error, restarting job')
                 except:
                     print("[crawling@home] Couldn't log to client:")
-  
+
 
 pool = None
 
@@ -183,7 +183,7 @@ def main(name, url, debug, isnotebook, workers):
     time.sleep(10)  # wait for in-progress rsync job to complete
     for client in glob('./*/client.json'):
         with open(client) as f:
-            client = cah.load( **ujson.load(f) )
+            client = cah.load(**ujson.load(f))
             client.bye()
     for folder in glob('./*'):
         if 'crawlingathome_client' in folder or 'venv' in folder or 'stats' in folder:

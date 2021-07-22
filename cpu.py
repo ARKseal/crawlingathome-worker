@@ -194,11 +194,12 @@ def updateFilters(bloom=None, blocked=None):
     if iters//10:
         return bloom, blocked
 
-    shutil.rmtree('blocklists')
+    shutil.rmtree('blocklists', ignore_errors=True)
 
     result = 1
     while result:
-        os.system("rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
+        result = os.system(
+            "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
 
     bloom = BloomFilter(max_elements=80_000_000,
                         error_rate=0.01, filename=("blocklists/bloom.bin", -1))
@@ -255,14 +256,9 @@ def main(name, url, debug):
 
             start = time.time()
 
-            if os.path.exists(output_folder):
-                shutil.rmtree(output_folder)
-
-            if os.path.exists(uid):
-                shutil.rmtree(uid)
-
-            if os.path.exists(".tmp"):
-                shutil.rmtree(".tmp")
+            shutil.rmtree(output_folder, ignore_errors=True)
+            shutil.rmtree(uid, ignore_errors=True)
+            shutil.rmtree(".tmp", ignore_errors=True)
 
             os.mkdir(output_folder)
             os.mkdir(img_output_folder)

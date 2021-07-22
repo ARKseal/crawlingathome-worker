@@ -13,7 +13,7 @@ rm -rf protoc-3.17.3-linux-x86_64.zip bin include readme.txt
 cd $CURRDIR
 apt-get update && apt-get install -y git build-essential python3.7-dev python3-pip python3.7-venv libtinfo5 libjpeg-dev
 
-rm crawlingathome.py clip_filter.py gpu.py requirements.txt blocklist-domain.txt failed-domains.txt bloom.bin
+rm crawlingathome.py clip_filter.py gpu.py requirements.txt
 rm -r crawlingathome_client
 
 git clone "https://github.com/TheoCoombes/crawlingathome" crawlingathome_client
