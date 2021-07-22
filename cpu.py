@@ -187,6 +187,28 @@ def upload(source: str, client_type: str):
     return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
+iters = 0
+
+
+def updateFilters(bloom=None, blocked=None):
+    if iters//10:
+        return bloom, blocked
+
+    shutil.rmtree('blocklists')
+
+    result = 1
+    while result:
+        os.system("rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
+
+    bloom = BloomFilter(max_elements=80_000_000,
+                        error_rate=0.01, filename=("blocklists/bloom.bin", -1))
+
+    blocked = BloomFilter(max_elements=10_000_000, error_rate=0.01, filename=(
+        "blocklists/failed-domains.bin", -1))
+
+    return bloom, blocked
+
+
 class FileData:
     def __init__(self, filename):
         self._filename = filename
@@ -206,24 +228,14 @@ class FileData:
 
 
 def main(name, url, debug):
+    global iters
+
     import crawlingathome_client as cah
 
     output_folder = "./save/"
     img_output_folder = output_folder + "images/"
 
-    blocked_links = set()
-    with open("blocklist-domain.txt") as f:
-        blocked_links = set(f.read().splitlines())
-
-    failed_links = set()
-    with open("failed-domains.txt") as f:
-        failed_links = set(f.read().splitlines())
-
-    blocked_links |= failed_links
-    del failed_links
-
-    bloom_filter = BloomFilter(max_elements=10000000,
-                               error_rate=0.01, filename=("bloom.bin", -1))
+    bloom_filter, blocked_links = updateFilters()
 
     client = cah.init(
         url=url, nickname=name, type='cpu'
@@ -237,6 +249,9 @@ def main(name, url, debug):
                 client = cah.init(
                     url=url, nickname=name, type='cpu'
                 )
+
+            bloom_filter, blocked_links = updateFilters(
+                bloom=bloom_filter, blocked=blocked_links)
 
             start = time.time()
 
@@ -324,6 +339,8 @@ def main(name, url, debug):
                 f"[crawling@home] job completed in {(end - start):.1f} seconds")
             print(
                 f"[crawling@home] job efficiency {(len(dlparse_df) / (end - start)):.2f} pairs/sec")
+
+            iters += 1
 
             if debug:
                 break

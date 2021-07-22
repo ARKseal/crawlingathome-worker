@@ -191,6 +191,9 @@ iters = 0
 
 
 def updateFilters(bloom=None, blocked=None):
+    if iters//10:
+        return bloom, blocked
+
     shutil.rmtree('blocklists')
 
     result = 1
@@ -225,6 +228,8 @@ class FileData:
 
 
 def main(name, url, debug):
+    global iters
+
     import crawlingathome_client as cah
 
     print('[crawling@home] loading clip')
@@ -327,6 +332,8 @@ def main(name, url, debug):
                 f"[crawling@home] job completed in {(end - start):.1f} seconds")
             print(
                 f"[crawling@home] job efficiency {(filtered_df_len / (end - start)):.2f} pairs/sec")
+
+            iters += 1
 
             if debug:
                 break
