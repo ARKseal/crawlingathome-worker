@@ -38,65 +38,103 @@ def chunk_using_generators(lst, n):
 def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
-
-def parse_wat(content, start, line_count, blocked, bloom_filter):
+def parse_wat_worker(file_name, start, line_count, oneprocess=False):
+    bloom_filter, blocked = updateFilters(recreate=True)
     dedupes = 0
     valid_data = []
-    content.seek(start)
-    for _ in range(line_count):
-        line = content.readline()
+    with open(file_name, 'r') as content:
+        content.seek(start)
+        for _ in range(line_count):
+            line = content.readline()
 
-        if "IMG@" not in line:
-            continue
-
-        line_str = line.strip()
-        data = ujson.loads(line_str)
-
-        linklist = data["Envelope"]["Payload-Metadata"]["HTTP-Response-Metadata"][
-            "HTML-Metadata"
-        ]["Links"]
-
-        base_url = os.path.dirname(
-            data["Envelope"]["WARC-Header-Metadata"]["WARC-Target-URI"]
-        )  # get base url
-
-        license = "?"
-        for e in linklist:
-            if "url" in e and "creativecommons.org/licenses/" in e["url"]:
-                license = e["url"]
-            if "alt" not in e:
-                continue
-            url = e["url"]
-
-            if any(x in url for x in [".svg", ".gif", "data:image", "javascript:"]):
+            if "IMG@" not in line:
                 continue
 
-            try:
-                if urlparse(url).netloc in blocked:
+            line_str = line.strip()
+            data = ujson.loads(line_str)
+
+            linklist = data["Envelope"]["Payload-Metadata"]["HTTP-Response-Metadata"][
+                "HTML-Metadata"
+            ]["Links"]
+
+            base_url = os.path.dirname(
+                data["Envelope"]["WARC-Header-Metadata"]["WARC-Target-URI"]
+            )  # get base url
+
+            license = "?"
+            for e in linklist:
+                if "url" in e and "creativecommons.org/licenses/" in e["url"]:
+                    license = e["url"]
+                if "alt" not in e:
                     continue
-            except:
-                continue
+                url = e["url"]
 
-            alt_text = ftfy.fix_text(e["alt"].replace("\n", " ")).strip()
-            try:
-                _, _, details = cld2.detect(alt_text)
-            except Exception as e:
-                alt_text = remove_bad_chars(alt_text)
-                _, _, details = cld2.detect(alt_text)
-
-            if details[0][1] == "en":
-                if not url.startswith("http"):
-                    url = urljoin(base_url, url)
-
-                if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
-                    dedupes += 1
+                if any(x in url for x in [".svg", ".gif", "data:image", "javascript:"]):
                     continue
 
-                valid_data.append((url, alt_text, license))
-    return [
-        t for t in {tuple(i) for i in valid_data}
-    ], dedupes  # Remove duplicate tuple from list
+                try:
+                    if urlparse(url).netloc in blocked:
+                        continue
+                except:
+                    continue
 
+                alt_text = ftfy.fix_text(e["alt"].replace("\n", " ")).strip()
+                try:
+                    _, _, details = cld2.detect(alt_text)
+                except Exception as e:
+                    alt_text = remove_bad_chars(alt_text)
+                    _, _, details = cld2.detect(alt_text)
+
+                if details[0][1] == "en":
+                    if not url.startswith("http"):
+                        url = urljoin(base_url, url)
+
+                    if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
+                        dedupes += 1
+                        continue
+
+                    valid_data.append((url, alt_text, license))
+        if oneprocess:
+            return [
+                t for t in {tuple(i) for i in valid_data}
+            ], dedupes  # Remove duplicate tuple from list
+            
+        with open(f'.tmp/pw-{uuid1()}.json', 'w') as f:
+            ujson.dump(valid_data + [dedupes], f)
+
+
+def parse_wat(file_name, shard, blocked, bloom_filter):
+
+    fd = FileData("shard.wat")
+
+    if shard == 0:
+        start_line = 0
+    if shard == 1:
+        start_line = len(fd)//2
+
+    line_count = len(fd)//2
+
+    n_processes = mp.cpu_count()
+    if n_processes == 1:
+        return parse_wat_worker(fd[start_line], line_count, oneprocess=True)
+
+    lc = line_count//n_processes - 1
+    with mp.Pool(n_processes) as pool:
+        pool.starmap(parse_wat_worker, [ (file_name, fd[start_line + i*lc], lc) for i in range(n_processes) ])
+    
+    valid_data = []
+    dedupes = 0
+    for tmpf in glob('.tmp/pw-*.json'):
+        with open(tmpf, 'r') as f:
+            tmp_data = ujson.load(f)
+            valid_data.extend(tmp_data[:-1])
+            dedupes += tmp_data[-1]
+    orig_len = len(valid_data)
+    data = [
+            t for t in {tuple(i) for i in valid_data}
+    ]
+    dedupes += orig_len - len(data)
+    return data, dedupes
 
 def process_img_content(response, alt_text, license, sample_id):
     img_output_folder = "save/images/"
@@ -147,7 +185,7 @@ async def request_image(datas, start_sampleid):
             n.start_soon(_request, data, start_sampleid)
             start_sampleid += 1
 
-    with open(f".tmp/{uuid1()}.json", "w") as f:
+    with open(f".tmp/dl-{uuid1()}.json", "w") as f:
         ujson.dump(tmp_data, f)
     gc.collect()
     return
@@ -171,8 +209,9 @@ def dl_wat(valid_data, first_sample_id):
 
         trio.run(_runtractor)
 
-    for tmpf in glob(".tmp/*.json"):
-        processed_samples.extend(ujson.load(open(tmpf)))
+    for tmpf in glob(".tmp/dl-*.json"):
+        with open(tmpf, 'r') as f:
+            processed_samples.extend(ujson.load(f))
     return pd.DataFrame(
         processed_samples,
         columns=["SAMPLE_ID", "PATH", "URL",
@@ -190,16 +229,18 @@ def upload(source: str, client_type: str):
 iters = 0
 
 
-def updateFilters(bloom=None, blocked=None):
-    if iters//10:
-        return bloom, blocked
+def updateFilters(bloom=None, blocked=None, recreate=False):
 
-    shutil.rmtree('blocklists', ignore_errors=True)
+    if not recreate:
+        if iters//10:
+            return bloom, blocked
 
-    result = 1
-    while result:
-        result = os.system(
-            "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
+        shutil.rmtree('blocklists', ignore_errors=True)
+
+        result = 1
+        while result:
+            result = os.system(
+                "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
 
     bloom = BloomFilter(max_elements=80_000_000,
                         error_rate=0.01, filename=("blocklists/bloom.bin", -1))
@@ -279,18 +320,8 @@ def main(name, url, debug):
             client.log("Processing shard")
             start_processing = time.time()
 
-            fd = FileData("shard.wat")
-
-            if shard_of_chunk == 0:
-                start_index = fd[0]
-            if shard_of_chunk == 1:
-                start_index = fd[int(len(fd) * 0.5)]
-
-            lines = int(len(fd) * 0.5)
-
-            with open("shard.wat", "r") as infile:
-                parsed_data, dedupes = parse_wat(
-                    infile, start_index, lines, blocked_links, bloom_filter)
+            parsed_data, dedupes = parse_wat(
+                'shard.wat', shard_of_chunk, blocked_links, bloom_filter)
 
             parsed_df = pd.DataFrame(parsed_data, columns=[
                                      "URL", "TEXT", "LICENSE"])

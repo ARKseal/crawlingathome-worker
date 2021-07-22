@@ -1,6 +1,7 @@
 asks
 bloom-filter2
 clip-anytorch
+datasets
 ftfy
 pandas
 Pillow

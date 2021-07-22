@@ -1,4 +1,5 @@
 clip-anytorch
+datasets
 pandas
 Pillow
 tensorflow
