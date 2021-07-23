@@ -1,9 +1,20 @@
 asks
 bloom-filter2
+<<<<<<< HEAD:requirements/cpu_requirements.txt
+=======
+clip-anytorch
+datasets
+>>>>>>> master:requirements.txt
 ftfy
 pandas
 Pillow
 pycld2
+<<<<<<< HEAD:requirements/cpu_requirements.txt
+=======
+regex
+tensorflow
+tfr_image
+>>>>>>> master:requirements.txt
 tractor
 trio
 ujson

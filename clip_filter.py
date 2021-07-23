@@ -1,4 +1,3 @@
-import os
 import pickle
 import time
 from multiprocessing import cpu_count

@@ -1,5 +1,4 @@
 import argparse
-from multiprocessing import cpu_count
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -12,8 +11,6 @@ if __name__ == '__main__':
                         default="http://cah.io.community/", help='The Crawling Server')
     parser.add_argument('--debug', '-d', action='store_true',
                         help='Add additional prints to debug code')
-    parser.add_argument('--workers', '-w', type=int,
-                        default=cpu_count(), help='The number of workers to use')
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--hybrid', '-y', action='store_true',
@@ -33,4 +30,4 @@ if __name__ == '__main__':
         gpu.main(args.name, args.url, args.debug)
     else:
         import hybrid
-        hybrid.main(args.name, args.url, args.debug, args.workers)
+        hybrid.main(args.name, args.url, args.debug)
