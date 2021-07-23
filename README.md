@@ -2,6 +2,8 @@
 
 > Help us build a billion-scale image-caption dataset by filtering Common Crawl with OpenAI CLIP
 
+## This Branch has all the dockerfiles for our worker
+
 ## Google Colab
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ARKseal/crawlingathome-worker/blob/master/notebooks/hybrid-worker.ipynb)
 
