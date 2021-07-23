@@ -57,7 +57,7 @@ runcmd:
  - sed -i '$a AllowUsers crawl' /etc/ssh/sshd_config
  # install the script
  - cd /home/crawl
- - wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/setup.sh
+ - wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/multiple-workers/setup/setup_hybrid.sh
  - bash setup.sh
  # make the script run as a service at startup
  - echo "[Unit]" >> /etc/systemd/system/crawl.service
@@ -77,7 +77,7 @@ runcmd:
  - systemctl enable crawl.service
  - echo "#!/bin/bash" >> /home/crawl/crawl.sh
  - echo ". venv/bin/activate" >> /home/crawl/crawl.sh
- - echo "python3 -u /home/crawl/crawlingathome.py >> /home/crawl/crawl.log 2>&1" >> /home/crawl/crawl.sh
+ - echo "export PYTHONHASHCODE=0 && python3 -u /home/crawl/crawlingathome.py >> /home/crawl/crawl.log 2>&1" >> /home/crawl/crawl.sh
  - chmod 744 /home/crawl/crawl.sh
  - chown crawl:adm -R /home/crawl/
  - reboot
