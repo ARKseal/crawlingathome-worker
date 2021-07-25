@@ -9,6 +9,7 @@ import traceback
 import warnings
 from glob import glob
 from io import BytesIO
+from threading import Thread
 from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
@@ -26,7 +27,6 @@ asks.init('trio')
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
-
 warnings.filterwarnings("ignore")
 
 
@@ -39,9 +39,12 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat_worker(file_name, start, line_count, oneprocess=False):
-    bloom_filter, blocked = updateFilters(recreate=True)
+def parse_wat_worker(file_name, start, line_count, oneprocess=False, bloom_filter=None, blocked_links=None, clipped_filter=None):
+    if not all([bloom_filter, blocked_links, clipped_filter]):
+        bloom_filter, blocked_links, clipped_filter = getFilters()
+
     dedupes = 0
+    cliped = 0
     valid_data = []
     with open(file_name, 'r') as content:
         content.seek(start)
@@ -74,7 +77,7 @@ def parse_wat_worker(file_name, start, line_count, oneprocess=False):
                     continue
 
                 try:
-                    if urlparse(url).netloc in blocked:
+                    if urlparse(url).netloc in blocked_links:
                         continue
                 except:
                     continue
@@ -89,53 +92,62 @@ def parse_wat_worker(file_name, start, line_count, oneprocess=False):
                 if details[0][1] == "en":
                     if not url.startswith("http"):
                         url = urljoin(base_url, url)
-
-                    if hashlib.md5((url + alt_text).encode("utf-8")).hexdigest() in bloom_filter:
+                    dedupe_url = hashlib.md5(
+                        (url + alt_text).encode("utf-8")).hexdigest()
+                    if dedupe_url in bloom_filter:
                         dedupes += 1
+                        continue
+                    elif dedupe_url in clipped_filter:
+                        cliped += 1
                         continue
 
                     valid_data.append((url, alt_text, license))
         if oneprocess:
             return [
+                # Remove duplicate tuple from list
                 t for t in {tuple(i) for i in valid_data}
-            ], dedupes  # Remove duplicate tuple from list
-            
+            ], dedupes, cliped
+
         with open(f'.tmp/pw-{uuid1()}.json', 'w') as f:
-            ujson.dump(valid_data + [dedupes], f)
+            ujson.dump(valid_data + [dedupes, cliped], f)
 
 
-def parse_wat(file_name, shard, blocked, bloom_filter):
-
-    fd = FileData("shard.wat")
+def parse_wat(file_name, shard, bloom_filter, blocked_links, clipped_filter):
+    fd = FileData(file_name)
 
     if shard == 0:
         start_line = 0
-    if shard == 1:
+    elif shard == 1:
         start_line = len(fd)//2
 
     line_count = len(fd)//2
 
     n_processes = mp.cpu_count()
     if n_processes == 1:
-        return parse_wat_worker(fd[start_line], line_count, oneprocess=True)
+        return parse_wat_worker(fd[start_line], line_count, oneprocess=True,
+                                bloom_filter=bloom_filter, blocked_links=blocked_links,
+                                clipped_filter=clipped_filter)
 
     lc = line_count//n_processes - 1
     with mp.Pool(n_processes) as pool:
-        pool.starmap(parse_wat_worker, [ (file_name, fd[start_line + i*lc], lc) for i in range(n_processes) ])
-    
+        pool.starmap(parse_wat_worker, [
+                     (file_name, fd[start_line + i*lc], lc) for i in range(n_processes)])
+
     valid_data = []
     dedupes = 0
+    cliped = 0
     for tmpf in glob('.tmp/pw-*.json'):
         with open(tmpf, 'r') as f:
             tmp_data = ujson.load(f)
-            valid_data.extend(tmp_data[:-1])
-            dedupes += tmp_data[-1]
+            valid_data.extend(tmp_data[:-2])
+            dedupes += tmp_data[-2]
+            cliped += tmp_data[-1]
     orig_len = len(valid_data)
     data = [
-            t for t in {tuple(i) for i in valid_data}
+        t for t in {tuple(i) for i in valid_data}
     ]
-    dedupes += orig_len - len(data)
-    return data, dedupes
+    shard_dups = orig_len - len(data)
+    return data, dedupes, cliped, shard_dups
 
 
 def process_img_content(response, alt_text, license, sample_id):
@@ -228,29 +240,33 @@ def upload(source: str, client_type: str):
     return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
-iters = 0
+def updateFilters():
+    start = time.time()
+    shutil.rmtree('blocklists', ignore_errors=True)
+
+    result = 1
+    for _ in range(3):
+        result = os.system(
+            "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
+        if result == 0:
+            break
+    end = time.time()
+    print(f'[crawling@home] updated filters in {(end-start):.1f}')
 
 
-def updateFilters(bloom=None, blocked=None, recreate=False):
-
-    if not recreate:
-        if iters//10:
-            return bloom, blocked
-
-        shutil.rmtree('blocklists', ignore_errors=True)
-
-        result = 1
-        while result:
-            result = os.system(
-                "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
-
+def getFilters(workers):
+    if workers == 1:
+        return [None]*3
     bloom = BloomFilter(max_elements=80_000_000,
                         error_rate=0.01, filename=("blocklists/bloom.bin", -1))
 
     blocked = BloomFilter(max_elements=10_000_000, error_rate=0.01, filename=(
         "blocklists/failed-domains.bin", -1))
 
-    return bloom, blocked
+    clipped = BloomFilter(max_elements=200_000_000, error_rate=0.05,
+                          filename=("blocklists/clipped.bin", -1))
+
+    return bloom, blocked, clipped
 
 
 class FileData:
@@ -263,6 +279,7 @@ class FileData:
             while f.readline():
                 self._line_to_position.append(f.tell())
                 self._length += 1
+        gc.collect()
 
     def __getitem__(self, line):
         return self._line_to_position[line]
@@ -272,15 +289,11 @@ class FileData:
 
 
 def main(name, url, debug):
-    global iters
-
     import crawlingathome_client as cah
 
     print('[crawling@home] loading clip')
     from clip_filter import run_inference
     print('\n[crawling@home] clip loaded\n')
-
-    bloom_filter, blocked_links = updateFilters()
 
     client = cah.init(
         url=url, nickname=name
@@ -289,6 +302,9 @@ def main(name, url, debug):
     output_folder = "./save/"
     img_output_folder = output_folder + "images/"
 
+    iters = 0
+    workers = mp.cpu_count()
+
     while client.jobCount() > 0:
         try:
             if not client.isAlive():
@@ -296,10 +312,14 @@ def main(name, url, debug):
                     url=url, nickname=name
                 )
 
-            bloom_filter, blocked_links = updateFilters(
-                bloom=bloom_filter, blocked=blocked_links)
-
             start = time.time()
+
+            if iters//10 == 0:
+                if workers == 1:
+                    updater = Thread(target=updateFilters)
+                else:
+                    updater = mp.Process(target=updateFilters)
+                updater.start()
 
             shutil.rmtree(output_folder, ignore_errors=True)
             shutil.rmtree(img_output_folder, ignore_errors=True)
@@ -311,6 +331,11 @@ def main(name, url, debug):
 
             client.newJob()
             client.downloadShard()
+
+            if iters//10 == 0:
+                updater.join()
+                bloom_filter, blocked_links, clipped_filter = getFilters(
+                    workers)
 
             first_sample_id = int(client.start_id)
             last_sample_id = int(client.end_id)
@@ -324,8 +349,8 @@ def main(name, url, debug):
             client.log("Processing shard")
             start_processing = time.time()
 
-            parsed_data, dedupes = parse_wat(
-                'shard.wat', shard_of_chunk, blocked_links, bloom_filter)
+            parsed_data, dedupes, cliped, shard_dups = parse_wat(
+                'shard.wat', shard_of_chunk, bloom_filter, blocked_links, clipped_filter)
 
             parsed_df = pd.DataFrame(parsed_data, columns=[
                                      "URL", "TEXT", "LICENSE"])
@@ -339,23 +364,38 @@ def main(name, url, debug):
 
             end_processing = time.time()
             print(
-                f'[crawling@home] processed shard in {end_processing - start_processing}, duplicates found: {dedupes}')
+                f'[crawling@home] Processed shard in {(end_processing-start_processing):.1f} seconds',
+                'duplicates found: {dedupes}, cliped found: {cliped}, shard dups found: {shard_dups}', sep='\n\t')
 
             client.log("Downloading images")
             start_dl = time.time()
             dlparse_df = dl_wat(parsed_data, first_sample_id)
             dlparse_df.to_csv(
                 f'{output_folder}{out_fname}.csv', index=False, sep="|")
+            dlparse_df.to_csv(
+                f'{output_folder}{out_fname}_unfiltered.csv', index=False, sep="|")
             end_dl = time.time()
+
             print(
                 f"[crawling@home] Downloaded {len(dlparse_df)} images out of {num_links} links in {(end_dl - start_dl):.1f} seconds")
             print(
                 f"[crawling@home] Download efficiency: {(len(dlparse_df) / (end_dl - start_dl)):.2f} img/sec OR {(num_links / (end_dl - start_dl)):.2f} links/sec")
 
+            dlparse_df.loc[:, "hash"] = dlparse_df.apply(lambda row: hashlib.md5(
+                (str(row.URL)+str(row.TEXT)).encode("utf-8")).hexdigest(), axis=1)
+
+            with open(f'{output_folder}hashes-{out_fname}.clp', 'w') as f:
+                for item in dlparse_df['hash']:
+                    f.write(item + '\n')
+
             client.log("Dropping NSFW keywords")
 
             filtered_df_len = run_inference(
                 dlparse_df, output_folder, out_fname)
+
+            with open(f'{output_folder}hashes-{out_fname}.hsh', 'w') as f:
+                for item in filtered_df_len['hash']:
+                    f.write(item + '\n')
 
             client.log("Uploading Results")
 
