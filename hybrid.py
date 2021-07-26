@@ -7,6 +7,7 @@ import shutil
 import time
 import traceback
 import warnings
+from datetime import datetime
 from glob import glob
 from io import BytesIO
 from threading import Thread
@@ -21,6 +22,7 @@ import tractor
 import trio
 import ujson
 from bloom_filter2 import BloomFilter
+from numpy.lib.arraysetops import isin
 from PIL import Image, ImageFile, UnidentifiedImageError
 
 asks.init('trio')
@@ -39,9 +41,9 @@ def remove_bad_chars(text):
     return "".join(c for c in text if c.isprintable())
 
 
-def parse_wat_worker(file_name, start, line_count, oneprocess=False, bloom_filter=None, blocked_links=None, clipped_filter=None):
+def parse_wat_worker(file_name, start, line_count, workers, oneprocess=False, bloom_filter=None, blocked_links=None, clipped_filter=None):
     if not all([bloom_filter, blocked_links, clipped_filter]):
-        bloom_filter, blocked_links, clipped_filter = getFilters()
+        bloom_filter, blocked_links, clipped_filter = getFilters(workers, recreate=True)
 
     dedupes = 0
     cliped = 0
@@ -112,7 +114,7 @@ def parse_wat_worker(file_name, start, line_count, oneprocess=False, bloom_filte
             ujson.dump(valid_data + [dedupes, cliped], f)
 
 
-def parse_wat(file_name, shard, bloom_filter, blocked_links, clipped_filter):
+def parse_wat(file_name, shard, bloom_filter, blocked_links, clipped_filter, workers):
     fd = FileData(file_name)
 
     if shard == 0:
@@ -122,16 +124,15 @@ def parse_wat(file_name, shard, bloom_filter, blocked_links, clipped_filter):
 
     line_count = len(fd)//2
 
-    n_processes = mp.cpu_count()
-    if n_processes == 1:
-        return parse_wat_worker(fd[start_line], line_count, oneprocess=True,
+    if workers == 1:
+        return parse_wat_worker(file_name, fd[start_line], line_count, workers, oneprocess=True,
                                 bloom_filter=bloom_filter, blocked_links=blocked_links,
                                 clipped_filter=clipped_filter)
 
-    lc = line_count//n_processes - 1
-    with mp.Pool(n_processes) as pool:
+    lc = line_count//workers - 1
+    with mp.Pool(workers) as pool:
         pool.starmap(parse_wat_worker, [
-                     (file_name, fd[start_line + i*lc], lc) for i in range(n_processes)])
+                     (file_name, fd[start_line + i*lc], lc, workers) for i in range(workers)])
 
     valid_data = []
     dedupes = 0
@@ -240,22 +241,52 @@ def upload(source: str, client_type: str):
     return os.system(f'rsync {options} {source} archiveteam@88.198.2.17::{target}')
 
 
+def shouldUpdate(iters, file_name='blocklists/time') -> bool:
+    if iters % 10:
+        return False
+    '''
+    if os.path.exists(file_name):
+        with open(file_name, 'r') as f:
+            data = f.readline()
+        d = datetime.strptime(data, '%m/%d/%Y')
+        if d.day == datetime.now().day:
+            return False
+    with open(file_name, 'w') as f:
+        f.write(datetime.now().strftime('%m/%d/%Y'))
+    '''
+    return True
+
+
+def _updateFilter(blocklist):
+    from requests import get
+    url = 'https://bitbucket.org/ARKseal/crawlingathome-blocklists/raw/HEAD/blocklists/{}'
+    with get(url.format(blocklist), stream=True) as r:
+        r.raise_for_status()
+        with open(f'blocklists/{blocklist}', 'w+b') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+
 def updateFilters():
     start = time.time()
     shutil.rmtree('blocklists', ignore_errors=True)
+    os.mkdir('blocklists')
 
-    result = 1
-    for _ in range(3):
-        result = os.system(
-            "rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
-        if result == 0:
-            break
+    processes = []
+    for blocklist in ('bloom.bin', 'clipped.bin', 'failed-domains.bin'):
+        p = Thread(target=_updateFilter, args=(blocklist,))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()
+
     end = time.time()
     print(f'[crawling@home] updated filters in {(end-start):.1f}')
 
 
-def getFilters(workers):
-    if workers == 1:
+def getFilters(workers, recreate=False):
+    if workers != 1 and not recreate:
         return [None]*3
     bloom = BloomFilter(max_elements=80_000_000,
                         error_rate=0.01, filename=("blocklists/bloom.bin", -1))
@@ -299,27 +330,30 @@ def main(name, url, debug):
         url=url, nickname=name
     )
 
+    if not os.path.exists('blocklists'):
+        os.mkdir('blocklists')
+
     output_folder = "./save/"
     img_output_folder = output_folder + "images/"
 
     iters = 0
+    updater = None
     workers = mp.cpu_count()
+    bloom_filter, blocked_links, clipped_filter = None, None, None
 
     while client.jobCount() > 0:
         try:
-            if not client.isAlive():
-                client = cah.init(
-                    url=url, nickname=name
-                )
-
             start = time.time()
 
-            if iters//10 == 0:
+            if shouldUpdate(iters):
                 if workers == 1:
                     updater = Thread(target=updateFilters)
                 else:
                     updater = mp.Process(target=updateFilters)
                 updater.start()
+
+            if not client.isAlive():
+                client.recreate()
 
             shutil.rmtree(output_folder, ignore_errors=True)
             shutil.rmtree(img_output_folder, ignore_errors=True)
@@ -332,8 +366,11 @@ def main(name, url, debug):
             client.newJob()
             client.downloadShard()
 
-            if iters//10 == 0:
-                updater.join()
+            if shouldUpdate(iters):
+                if hasattr(updater, 'join'):
+                    updater.join()
+                if hasattr(updater, 'close'):
+                    updater.close()
                 bloom_filter, blocked_links, clipped_filter = getFilters(
                     workers)
 
@@ -350,30 +387,22 @@ def main(name, url, debug):
             start_processing = time.time()
 
             parsed_data, dedupes, cliped, shard_dups = parse_wat(
-                'shard.wat', shard_of_chunk, bloom_filter, blocked_links, clipped_filter)
+                'shard.wat', shard_of_chunk, bloom_filter, blocked_links, clipped_filter, workers)
 
-            parsed_df = pd.DataFrame(parsed_data, columns=[
-                                     "URL", "TEXT", "LICENSE"])
-            parsed_df.to_csv(output_folder + out_fname +
-                             "_parsed.csv", index=False, sep="|")
-
-            num_links = len(parsed_df)
-            del parsed_df
+            num_links = len(parsed_data)
 
             random.shuffle(parsed_data)
 
             end_processing = time.time()
             print(
                 f'[crawling@home] Processed shard in {(end_processing-start_processing):.1f} seconds',
-                'duplicates found: {dedupes}, cliped found: {cliped}, shard dups found: {shard_dups}', sep='\n\t')
+                f'duplicates found: {dedupes}, cliped found: {cliped}, shard dups found: {shard_dups}', sep='\n\t')
 
             client.log("Downloading images")
             start_dl = time.time()
             dlparse_df = dl_wat(parsed_data, first_sample_id)
             dlparse_df.to_csv(
                 f'{output_folder}{out_fname}.csv', index=False, sep="|")
-            dlparse_df.to_csv(
-                f'{output_folder}{out_fname}_unfiltered.csv', index=False, sep="|")
             end_dl = time.time()
 
             print(
@@ -390,28 +419,23 @@ def main(name, url, debug):
 
             client.log("Dropping NSFW keywords")
 
-            filtered_df_len = run_inference(
+            filtered_df = run_inference(
                 dlparse_df, output_folder, out_fname)
 
             with open(f'{output_folder}hashes-{out_fname}.hsh', 'w') as f:
-                for item in filtered_df_len['hash']:
+                for item in filtered_df['hash']:
                     f.write(item + '\n')
 
             client.log("Uploading Results")
 
             upload(f'{output_folder}/*{out_fname}*', client.type)
 
-            client.completeJob(filtered_df_len)
+            client.completeJob(len(filtered_df))
             end = time.time()
             print(
                 f"[crawling@home] job completed in {(end - start):.1f} seconds")
             print(
-                f"[crawling@home] job efficiency {(filtered_df_len / (end - start)):.2f} pairs/sec")
-
-            iters += 1
-
-            if debug:
-                break
+                f"[crawling@home] job efficiency {(len(filtered_df) / (end - start)):.2f} pairs/sec")
         except KeyboardInterrupt:
             print("[crawling@home] stopping crawler")
             break
@@ -419,12 +443,23 @@ def main(name, url, debug):
             print(f"[crawling@home] ERROR: {ex}")
             if debug:
                 traceback.print_exc()
-                break
             if client.isAlive():
                 try:
                     client.log('Error, restarting job')
                 except:
                     print("[crawling@home] Couldn't log to client:")
+        finally:
+            iters += 1
+
+            if debug:
+                break
+    try:
+        if updater is not None:
+            updater.join()
+            if isinstance(updater, mp.Process):
+                updater.close()
+    except:
+        pass
     try:
         if client.isAlive():
             client.bye()

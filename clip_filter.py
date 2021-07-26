@@ -17,6 +17,7 @@ vmem = torch.cuda.get_device_properties(0).total_memory if cuda else 0
 batch_size = 128 * int(vmem / 1800000000) if cuda else cpu_count()
 print(f"[crawling@home] batch size = {batch_size}")
 
+
 class CLIPDataset(torch.utils.data.Dataset):
     def __init__(self, dataframe, preprocess):
         self.dataframe = dataframe
@@ -33,20 +34,27 @@ class CLIPDataset(torch.utils.data.Dataset):
             self.tokenizer(row["TEXT"], truncate=True)[0],
         )
 
+
 class CLIP:
     def __init__(self):
         self.model, self.preprocess = clip.load("ViT-B/32", device=device)
         self.cosine_similarity = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
         with torch.no_grad():
-            self.categories = self.model.encode_text(clip.tokenize(["neutral","selfie", "illustration, drawing", "toys, play, kids, children", "teddy bear, puppet", "animal, bird, mammal, insect" "fashion, clothes", "logo, commercial, ad, advertisement", "drawing, painting","anime, cartoon","comedy, fun","romance, love story","thriller, suspense, crime story","action, action movie", "horror, monster movie", "documentary", "news, journalism", "entertainment", "talk show", "porn, sex, sperm, nipples, breats, tits, boops, penis, dick, cock, clitoris, vagina, fuck, lust, horny, sexual, lick, licking",  "porn, sex, sperm, nipples", "porn, sex, sperm, penis, dick, cock", "nipples, breats, tits, boops, sexy", "penis, dick, cock", "clitoris, vagina", "sex, fuck, lust, horny, sexual, lick, licking", "porn, sex, sexy","sexy, hot","sperm, skin","lust, horny, sexual","lick, licking, body", "anime, hentai, sexy", "cartoon, sexy, sex", "hentai", "anime, sexy, breasts", "hentai"]).to(device))
-            self.underaged_categories = self.model.encode_text(clip.tokenize(["teenager, teen", "kid, child, teenager, teen, baby or toddler, underaged, little girl, little boy", "kid, child, little girl, little boy", "baby, toddler","adult, woman, man, grownup, grown person,full-aged of legal age","full-aged, of legal age, adult","woman, man","adult, woman, man, grownup, grown person,full-aged of legal age"]).to(device))
-            self.animal_categories = self.model.encode_text(clip.tokenize(["lifeless object, thing", "thing, object", "material", "furniture","wall", "house", "tree", "wood","ground","industry", "table", "bed", "tool", "dress, clothes", "door", "chair", "rock, stone", "human", "man", "woman", "man, woman", "animal","cat","dog", "cow", "pig", "goat", "sheep", "elephant", "horse", "horse, elephant, pig, dog, cat, sheep, goat, animal", "life", "wildlife"]).to(device))
+            self.categories = self.model.encode_text(clip.tokenize(["neutral", "selfie", "illustration, drawing", "toys, play, kids, children", "teddy bear, puppet", "animal, bird, mammal, insect" "fashion, clothes", "logo, commercial, ad, advertisement", "drawing, painting", "anime, cartoon", "comedy, fun", "romance, love story", "thriller, suspense, crime story", "action, action movie", "horror, monster movie", "documentary", "news, journalism", "entertainment", "talk show",
+                                                     "porn, sex, sperm, nipples, breats, tits, boops, penis, dick, cock, clitoris, vagina, fuck, lust, horny, sexual, lick, licking",  "porn, sex, sperm, nipples", "porn, sex, sperm, penis, dick, cock", "nipples, breats, tits, boops, sexy", "penis, dick, cock", "clitoris, vagina", "sex, fuck, lust, horny, sexual, lick, licking", "porn, sex, sexy", "sexy, hot", "sperm, skin", "lust, horny, sexual", "lick, licking, body", "anime, hentai, sexy", "cartoon, sexy, sex", "hentai", "anime, sexy, breasts", "hentai"]).to(device))
+            self.underaged_categories = self.model.encode_text(clip.tokenize(["teenager, teen", "kid, child, teenager, teen, baby or toddler, underaged, little girl, little boy", "kid, child, little girl, little boy",
+                                                               "baby, toddler", "adult, woman, man, grownup, grown person,full-aged of legal age", "full-aged, of legal age, adult", "woman, man", "adult, woman, man, grownup, grown person,full-aged of legal age"]).to(device))
+            self.animal_categories = self.model.encode_text(clip.tokenize(["lifeless object, thing", "thing, object", "material", "furniture", "wall", "house", "tree", "wood", "ground", "industry", "table", "bed", "tool", "dress, clothes", "door",
+                                                            "chair", "rock, stone", "human", "man", "woman", "man, woman", "animal", "cat", "dog", "cow", "pig", "goat", "sheep", "elephant", "horse", "horse, elephant, pig, dog, cat, sheep, goat, animal", "life", "wildlife"]).to(device))
 
     def similarity_imgalt(self, image_tensor, text_tokens):
         with torch.no_grad():
-            image_features = self.model.encode_image(image_tensor.to(device)).float()
-            text_features = self.model.encode_text(text_tokens.to(device)).float()
-            similarity = self.cosine_similarity(image_features, text_features).tolist()
+            image_features = self.model.encode_image(
+                image_tensor.to(device)).float()
+            text_features = self.model.encode_text(
+                text_tokens.to(device)).float()
+            similarity = self.cosine_similarity(
+                image_features, text_features).tolist()
 
         image_features = image_features.detach().cpu().numpy()
         return image_features, similarity
@@ -55,16 +63,19 @@ class CLIP:
         ret_image_features = []
         ret_similarity = []
         dataset = CLIPDataset(df, self.preprocess)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=cpu_count(), pin_memory=True)
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=cpu_count(), pin_memory=True)
         for tensors, tokens in dataloader:
-            image_features, similarities = self.similarity_imgalt(tensors, tokens)
+            image_features, similarities = self.similarity_imgalt(
+                tensors, tokens)
             ret_image_features.extend(image_features)
             ret_similarity.extend(similarities)
         return ret_image_features, ret_similarity
 
     def prob(self, image_features, text_features):
         text_features = text_features.float()
-        image_features = torch.as_tensor(image_features).to(device, dtype=torch.float32)
+        image_features = torch.as_tensor(
+            image_features).to(device, dtype=torch.float32)
         image_features /= image_features.norm(dim=-1, keepdim=True)
         text_features /= text_features.norm(dim=-1, keepdim=True)
 
@@ -101,12 +112,14 @@ def df_clipfilter(df):
         elif nsfw_prob[0] >= 19 and nsfw_prob[1] >= 19:
             df.at[i, "NSFW"] = "NSFW"
 
-        underage_prob = clip_filter.prob(img_embed, clip_filter.underaged_categories)
+        underage_prob = clip_filter.prob(
+            img_embed, clip_filter.underaged_categories)
         if underage_prob[0] < 4 or underage_prob[1] < 4 or any(x in df.at[i, "TEXT"] for x in underaged_text):
             df.drop(i, inplace=True)
             continue
 
-        animal_prob = clip_filter.prob(img_embed, clip_filter.animal_categories)
+        animal_prob = clip_filter.prob(
+            img_embed, clip_filter.animal_categories)
         if animal_prob[0] > 20:
             df.drop(i, inplace=True)
             continue
@@ -159,8 +172,10 @@ def run_inference(df, output_folder, out_name):
     df.to_csv(output_folder + out_name + ".csv", index=False, sep="|")
 
     end_clip = time.time()
-    print(f"[crawling@home] CLIP filtered {len(df)} in {round(end_clip - start_clip)} seconds")
-    print(f"[crawling@home] CLIP efficiency {len(df) / (end_clip - start_clip)} img/sec")
+    print(
+        f"[crawling@home] CLIP filtered {len(df)} in {round(end_clip - start_clip)} seconds")
+    print(
+        f"[crawling@home] CLIP efficiency {len(df) / (end_clip - start_clip)} img/sec")
 
     img_embeds_sampleid = {}
     for i, img_embed_it in enumerate(img_embeddings):
@@ -175,4 +190,4 @@ def run_inference(df, output_folder, out_name):
         f"{output_folder}crawling_at_home_{out_name}__00000-of-00001.tfrecord",
     )
 
-    return len(df)
+    return df
