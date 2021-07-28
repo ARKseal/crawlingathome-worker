@@ -2,7 +2,6 @@ clip-anytorch
 datasets
 pandas
 Pillow
-tensorflow
-tfr_image
+tfreecord
 trio
 ujson
