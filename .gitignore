@@ -145,3 +145,4 @@ save/*
 *.wat
 hcloud-python
 hcloud
+**/test/
