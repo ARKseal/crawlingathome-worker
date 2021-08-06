@@ -105,10 +105,12 @@ def parse_wat_worker(file_name, start, line_count, oneprocess=False):
 
                     valid_data.append((url, alt_text, license))
         if oneprocess:
-            return [
-                # Remove duplicate tuple from list
+            orig_len = len(valid_data)
+            data = [
                 t for t in {tuple(i) for i in valid_data}
-            ], dedupes, cliped
+            ]
+            shard_dups = orig_len - len(data)
+            return data, dedupes, cliped, shard_dups
 
         with open(f'.tmp/pw-{uuid1()}.json', 'w') as f:
             ujson.dump(valid_data + [dedupes, cliped], f)
