@@ -7,21 +7,19 @@ import shutil
 import time
 import traceback
 import warnings
-from ctypes import c_int
+from ctypes import c_bool, c_int
+from functools import partial
 from glob import glob
 from io import BytesIO
-from multiprocessing import managers
 from threading import Thread
 from urllib.parse import urljoin, urlparse
 from uuid import uuid1
 
 import asks
-import dill
 import ftfy
 import pandas as pd
 import pycld2 as cld2
 import requests
-import tractor
 import trio
 import ujson
 from bloom_filter2 import BloomFilter
@@ -176,7 +174,7 @@ def process_img_content(response, alt_text, license, sample_id):
     return [str(sample_id), out_fname, response.url, alt_text, width, height, license]
 
 
-async def request_image(datas, start_sampleid, processing_count_dump, finished_count_dump, authkey):
+async def request_image(datas, start_sampleid):
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
@@ -200,7 +198,6 @@ async def request_image(datas, start_sampleid, processing_count_dump, finished_c
         except Exception:
             return
 
-    trio.lowlevel.add_instrument(DownloadProgressInstrument(processing_count_dump, finished_count_dump, authkey))
     async with trio.open_nursery() as n:
         for data in datas:
             n.start_soon(_request, data, start_sampleid)
@@ -210,55 +207,44 @@ async def request_image(datas, start_sampleid, processing_count_dump, finished_c
         ujson.dump(tmp_data, f)
     gc.collect()
 
+def dl_wat_worker(data, start_sample_id, processing_count, finished_count, lock):
+    trio.run(request_image, data, start_sample_id, instruments=[DownloadProgressInstrument(processing_count, finished_count, lock)])
+
+def dl_progress(len_data, processing_count, finished_count, update_tqdm, lock):
+        progress_bar = tqdm(total=len_data, unit='links')
+        while True:
+            with lock:
+                if not update_tqdm.value:
+                    break
+                progress_bar.desc = f'Currently processing {processing_count.value} links'
+                progress_bar.update(finished_count.value - progress_bar.n)
+            time.sleep(1)
+        progress_bar.close()
 
 def dl_wat(valid_data, first_sample_id):
     # Download every image available
     processed_samples = []
     n_processes = mp.cpu_count()
-    update_tqdm = True
 
-    authkey = mp.current_process().authkey
-
-    manager = CounterManager(('localhost', 2288), authkey)
-    manager.start()
-    manager.connect()
+    manager = mp.Manager()
+    update_tqdm = manager.Value(c_bool, True)
 
     processing_count = manager.Value(c_int, 0)
     finished_count = manager.Value(c_int, 0)
+    lock = manager.Lock()
 
-    processing_count_dump = dill.dumps(processing_count)
-    finished_count_dump = dill.dumps(finished_count)
-
-    def wrapper():
-        nonlocal update_tqdm
-
-        if n_processes == 1:
-            trio.run(request_image, valid_data, first_sample_id)
-        else:
-            async def _runtractor():
-                async with tractor.open_nursery() as n:
-                    chunk_size = len(valid_data) // n_processes + 1
-                    for i, data in enumerate(chunk_using_generators(valid_data, chunk_size)):
-                        await n.run_in_actor(
-                            request_image, datas=data, start_sampleid=first_sample_id + i * chunk_size, processing_count_dump=processing_count_dump, finished_count_dump=finished_count_dump, authkey=authkey
-                        )
-
-            trio.run(_runtractor)
-        update_tqdm = False
-
-
-    t = Thread(target=wrapper)
+    t = mp.Process(target=dl_progress, args=(len(valid_data), processing_count, finished_count, update_tqdm, lock))
     t.start()
 
-    progress_bar = tqdm(total=len(valid_data), unit='links')
-    while update_tqdm:
-        progress_bar.desc = f'Currently processing {processing_count.value} links'
-        progress_bar.update(finished_count.value - progress_bar.n)
-        time.sleep(1)
-    
+    chunk_size = len(valid_data) // n_processes + 1
+    with mp.Pool(n_processes) as pool:
+        pool.starmap(dl_wat_worker, [(data, first_sample_id + i * chunk_size, processing_count, finished_count, lock) for (i, data) in enumerate(chunk_using_generators(valid_data, chunk_size))])
+
+    with lock:
+        update_tqdm.value = False
+
     t.join()
-    manager.shutdown()
-    progress_bar.close()
+    t.close()
 
     for tmpf in glob('.tmp/dl-*.json'):
         with open(tmpf, 'r') as f:
@@ -321,21 +307,15 @@ def getFilters():
     return bloom, blocked, clipped
 
 class DownloadProgressInstrument(trio.abc.Instrument):
-    def __init__(self, processing_count_dump, finished_count_dump, authkey):
-        self._manager = CounterManager(address=('localhost',2288),authkey=authkey)
-        self._manager.connect()
-
-        print('dl inst started')
-        mp.current_process().authkey = authkey
-        self._finished_count = dill.loads(finished_count_dump)
+    def __init__(self, processing_count, finished_count, lock):
+        self._processing_count = processing_count
+        self._finished_count = finished_count
+        self._lock = lock
 
     def task_exited(self, task):
-        if task.custom_sleep_data == 0:
-            mp.current_process().authkey = authkey
+        #if task.custom_sleep_data == 0:
+        with self._lock:
             self._finished_count.value += 1
-
-class CounterManager(managers.SyncManager):
-    pass
 
 class FileData:
     def __init__(self, filename):
