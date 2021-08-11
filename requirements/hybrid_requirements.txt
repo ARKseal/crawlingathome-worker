@@ -7,6 +7,6 @@ pandas
 Pillow
 pycld2
 tfreecord
-tractor
 trio
+tqdm
 ujson

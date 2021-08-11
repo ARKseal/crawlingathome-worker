@@ -7,6 +7,8 @@ import shutil
 import time
 import traceback
 import warnings
+from ctypes import c_bool, c_int
+from functools import partial
 from glob import glob
 from io import BytesIO
 from threading import Thread
@@ -18,14 +20,11 @@ import ftfy
 import pandas as pd
 import pycld2 as cld2
 import requests
-import tractor
 import trio
 import ujson
 from bloom_filter2 import BloomFilter
 from PIL import Image, ImageFile, UnidentifiedImageError
 from requests.adapters import HTTPAdapter
-
-asks.init('trio')
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # https://stackoverflow.com/a/47958486
 
@@ -174,56 +173,100 @@ def process_img_content(response, alt_text, license, sample_id):
     return [str(sample_id), out_fname, response.url, alt_text, width, height, license]
 
 
-async def request_image(datas, start_sampleid):
+async def request_image(datas, start_sampleid, processing_count, lock):
+    limit = trio.CapacityLimiter(165*2)
     tmp_data = []
     session = asks.Session(connections=165)
     session.headers = {
         'User-Agent': 'Crawling at Home Project (http://cah.io.community)',
         'Accept-Language': 'en-US',
         'Accept-Encoding': 'gzip, deflate',
-        'Referer': 'https://commoncrawl.org',
+        'Referer': 'https://www.google.com',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     }
 
     async def _request(data, sample_id):
+        task = trio.lowlevel.current_task()
+        with lock:
+            processing_count.value += 1
+
         url, alt_text, license = data
         try:
             proces = process_img_content(
                 await session.get(url, timeout=5), alt_text, license, sample_id
             )
+            task.custom_sleep_data = 0
             if proces is not None:
                 tmp_data.append(proces)
         except Exception:
-            return
+            task.custom_sleep_data = 1
 
     async with trio.open_nursery() as n:
         for data in datas:
-            n.start_soon(_request, data, start_sampleid)
+            async with limit:
+                n.start_soon(_request, data, start_sampleid)
             start_sampleid += 1
 
     with open(f'.tmp/dl-{uuid1()}.json', 'w') as f:
         ujson.dump(tmp_data, f)
     gc.collect()
-    return
 
 
-def dl_wat(valid_data, first_sample_id):
+def dl_wat_worker(data, start_sample_id, processing_count, finished_count, error_count, lock):
+    trio.run(request_image, data, start_sample_id, processing_count, lock, instruments=[
+             DownloadProgressInstrument(processing_count, finished_count, error_count, lock)])
+
+
+def dl_progress(len_data, processing_count, finished_count, update_tqdm, lock, isnotebook=False):
+    if isnotebook:
+        from tqdm import tqdm
+    else:
+        from tqdm import tqdm
+
+    progress_bar = tqdm(total=len_data, unit='links')
+    while True:
+        with lock:
+            if not update_tqdm.value:
+                break
+            progress_bar.desc = f'Processing {processing_count.value} links'
+            progress_bar.update(finished_count.value - progress_bar.n)
+        time.sleep(1)
+    progress_bar.close()
+
+
+def dl_wat(valid_data, first_sample_id, isnotebook=False):
     # Download every image available
     processed_samples = []
     n_processes = mp.cpu_count()
 
-    if n_processes == 1:
-        trio.run(request_image, valid_data, first_sample_id)
-    else:
-        async def _runtractor():
-            async with tractor.open_nursery() as n:
-                chunk_size = len(valid_data) // n_processes + 1
-                for i, data in enumerate(chunk_using_generators(valid_data, chunk_size)):
-                    await n.run_in_actor(
-                        request_image, datas=data, start_sampleid=first_sample_id + i * chunk_size
-                    )
+    manager = mp.Manager()
+    update_tqdm = manager.Value(c_bool, True)
 
-        trio.run(_runtractor)
+    processing_count = manager.Value(c_int, 0)
+    finished_count = manager.Value(c_int, 0)
+    lock = manager.Lock()
+
+    t = mp.Process(target=dl_progress, args=(
+        len(valid_data), processing_count, finished_count, update_tqdm, lock, isnotebook))
+    t.start()
+
+    if n_processes == 1:
+        dl_wat_worker(valid_data, processing_count,
+                      finished_count, update_tqdm, lock, isnotebook)
+    else:
+        chunk_size = len(valid_data) // n_processes + 1
+        worker = partial(dl_wat_worker, processing_count=processing_count,
+                         finished_count=finished_count, lock=lock)
+        with mp.Pool(n_processes) as pool:
+            pool.starmap(worker, [(data, first_sample_id + i * chunk_size)
+                                  for (i, data) in enumerate(chunk_using_generators(valid_data, chunk_size))])
+
+    time.sleep(1)
+    with lock:
+        update_tqdm.value = False
+
+    t.join()
+    t.close()
 
     for tmpf in glob('.tmp/dl-*.json'):
         with open(tmpf, 'r') as f:
@@ -286,6 +329,18 @@ def getFilters():
     return bloom, blocked, clipped
 
 
+class DownloadProgressInstrument(trio.abc.Instrument):
+    def __init__(self, processing_count, finished_count, lock):
+        self._processing_count = processing_count
+        self._finished_count = finished_count
+        self._lock = lock
+
+    def task_exited(self, task):
+        if task.custom_sleep_data in [0, 1]:
+            with self._lock:
+                self._finished_count.value += 1
+
+
 class FileData:
     def __init__(self, filename):
         self._filename = filename
@@ -305,7 +360,7 @@ class FileData:
         return self._length
 
 
-def main(name, url, debug):
+def main(name, url, debug, isnotebook):
     import crawlingathome_client as cah
 
     client = cah.init(
@@ -382,7 +437,7 @@ def main(name, url, debug):
 
             client.log('Downloading images')
             start_dl = time.time()
-            dlparse_df = dl_wat(parsed_data, first_sample_id)
+            dlparse_df = dl_wat(parsed_data, first_sample_id, isnotebook)
             dlparse_df.to_csv(
                 f'{output_folder}{out_fname}.csv', index=False, sep='|')
             end_dl = time.time()

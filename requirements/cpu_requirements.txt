@@ -4,6 +4,6 @@ ftfy
 pandas
 Pillow
 pycld2
-tractor
 trio
+tqdm
 ujson

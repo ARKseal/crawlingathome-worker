@@ -18,6 +18,7 @@ vmem = torch.cuda.get_device_properties(0).total_memory if cuda else 0
 batch_size = 128 * int(vmem / 1800000000) if cuda else cpu_count()
 print(f'[crawling@home] batch size = {batch_size}')
 
+use_jit = True if cuda and '1.7.1' in torch.__version__
 
 class CLIPDataset(torch.utils.data.Dataset):
     def __init__(self, dataframe, preprocess):
@@ -38,7 +39,7 @@ class CLIPDataset(torch.utils.data.Dataset):
 
 class CLIP:
     def __init__(self):
-        self.model, self.preprocess = clip.load('ViT-B/32', device=device)
+        self.model, self.preprocess = clip.load('ViT-B/32', device=device, jit=use_jit)
         self.cosine_similarity = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
         with torch.no_grad():
             self.categories = self.model.encode_text(clip.tokenize(['neutral', 'selfie', 'illustration, drawing', 'toys, play, kids, children', 'teddy bear, puppet', 'animal, bird, mammal, insect' 'fashion, clothes', 'logo, commercial, ad, advertisement', 'drawing, painting', 'anime, cartoon', 'comedy, fun', 'romance, love story', 'thriller, suspense, crime story', 'action, action movie', 'horror, monster movie', 'documentary', 'news, journalism', 'entertainment', 'talk show',

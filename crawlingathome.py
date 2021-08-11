@@ -11,6 +11,8 @@ if __name__ == '__main__':
                         default='http://cah.io.community/', help='The Crawling Server')
     parser.add_argument('--debug', '-d', action='store_true',
                         help='Add additional prints to debug code')
+    parser.add_argument('--notebook', '-b', action='store_true',
+                        help='Use tqdm.notebook module for notebooks')
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--hybrid', '-y', action='store_true',
@@ -24,10 +26,10 @@ if __name__ == '__main__':
 
     if args.cpu:
         import cpu
-        cpu.main(args.name, args.url, args.debug)
+        cpu.main(args.name, args.url, args.debug, args.notebook)
     elif args.gpu:
         import gpu
-        gpu.main(args.name, args.url, args.debug)
+        gpu.main(args.name, args.url, args.debug, args.notebook)
     else:
         import hybrid
-        hybrid.main(args.name, args.url, args.debug)
+        hybrid.main(args.name, args.url, args.debug, args.notebook)
