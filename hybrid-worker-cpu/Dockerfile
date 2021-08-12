@@ -30,9 +30,6 @@ RUN apt-get update && apt-get install -y git libjpeg-dev libopenjp2-7-dev libtif
     && pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir \
     && pip3 install -r ./requirements.txt --no-cache-dir \
     \
-    && yes | pip3 uninstall pillow \
-    && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd --no-cache-dir \
-    \
     && yes | pip3 uninstall asks \
     && pip3 install git+https://github.com/rvencu/asks --no-cache-dir
 
