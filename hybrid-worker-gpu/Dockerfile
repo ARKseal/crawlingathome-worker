@@ -40,7 +40,7 @@ WORKDIR /crawl
 COPY --from=builder /crawl /crawl
 COPY --from=builder /usr/bin/protoc /usr/bin/protoc
 
-RUN apt-get update && apt-get install -y libjpeg-dev libopenjp2-7-dev libtiff5-dev libtinfo5 python3 rsync zlib1g-dev --no-install-recommends \
+RUN apt-get update && apt-get install -y libjpeg-dev libopenjp2-7-dev libtiff5-dev libtinfo5 python3 rsync wget zlib1g-dev --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     \
     && chmod +x /usr/bin/protoc
