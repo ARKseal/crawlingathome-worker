@@ -1,8 +1,22 @@
-FROM python:3.8 as builder
+FROM ubuntu:20.04 as builder
 
 WORKDIR /crawl
 
-RUN apt-get update && apt-get install -y git libjpeg-dev libopenjp2-7-dev libtiff5-dev libtinfo5 python3 python3-dev python3-pip python3-venv unzip wget zlib1g-dev --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libjpeg-dev \
+        libopenjp2-7-dev \
+        libtiff5-dev \
+        libtinfo5 \
+        python3 \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        git \
+        unzip \
+        wget \
+        zlib1g-dev \
+    \
     && rm -rf /var/lib/apt/lists/* \
     \
     && cd /tmp \
@@ -12,6 +26,14 @@ RUN apt-get update && apt-get install -y git libjpeg-dev libopenjp2-7-dev libtif
     && rm -rf protoc-3.17.3-linux-x86_64.zip bin include readme.txt \
     && cd /crawl \
     \
+    && python3 -m venv venv && . venv/bin/activate \
+    && python3 -m pip install -U pip --no-cache-dir \
+    && pip3 install wheel --no-cache-dir \
+    \
+    && pip3 install pycld2 --no-cache-dir || ( \
+        pip3 install git+https://github.com/TheoCoombes/pycld2 --no-cache-dir \
+    ) \
+    \
     && git clone "https://github.com/TheoCoombes/crawlingathome" crawlingathome_client \
     && rm -rf ./crawlingathome_client/.git \
     \
@@ -20,31 +42,41 @@ RUN apt-get update && apt-get install -y git libjpeg-dev libopenjp2-7-dev libtif
     && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/cpu.py \
     && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/requirements/cpu_requirements.txt -O requirements.txt \
     \
-    && python3 -m venv venv && . venv/bin/activate \
-    && python3 -m pip install -U pip --no-cache-dir \
-    \
-    && pip3 install wheel --no-cache-dir \
-    \
     && pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir \
     && pip3 install -r ./requirements.txt --no-cache-dir \
+    && rm requirements.txt \
     \
     && yes | pip3 uninstall asks \
     && pip3 install git+https://github.com/rvencu/asks --no-cache-dir
 
-FROM python:3.8-slim
+FROM ubuntu:20.04
 
 WORKDIR /crawl
 
 COPY --from=builder /crawl /crawl
 COPY --from=builder /usr/bin/protoc /usr/bin/protoc
 
-RUN apt-get update && apt-get install -y libjpeg-dev libopenjp2-7-dev libtiff5-dev libtinfo5 rsync wget zlib1g-dev --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libgomp1 \
+        libopenblas-dev \
+        libjpeg-dev \
+        libopenjp2-7-dev \
+        libtiff5-dev \
+        libtinfo5 \
+        python3 \
+        rsync \
+        wget \
+        zlib1g-dev \
+    \
     && rm -rf /var/lib/apt/lists/* \
     \
     && chmod +x /usr/bin/protoc
 
+ARG VERSION
+ENV CAHVERSION=$VERSION
 ENV PYTHONHASHSEED=0
 ENV NAME="ARKseal"
 ENV PATH="/crawl/venv/bin:$PATH"
 
-CMD nice python3 -u crawlingathome.py --name $NAME --cpu
+CMD nice python3 -u crawlingathome.py --name $NAME --cpu --docker
