@@ -4,14 +4,24 @@ WORKDIR /crawl
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
         libjpeg-dev \
+        libjpeg8-dev \
+        liblcms2-dev \
         libopenjp2-7-dev \
         libtiff5-dev \
         libtinfo5 \
+        libwebp-dev \
+        libxcb1-dev \
         python3 \
         python3-dev \
+        python3-tk \
         python3-pip \
         python3-venv \
+        tcl8.6-dev \
+        tk8.6-dev \
         git \
         unzip \
         wget \
@@ -58,16 +68,10 @@ COPY --from=builder /usr/bin/protoc /usr/bin/protoc
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
-        libgomp1 \
-        libopenblas-dev \
-        libjpeg-dev \
-        libopenjp2-7-dev \
-        libtiff5-dev \
         libtinfo5 \
         python3 \
         rsync \
         wget \
-        zlib1g-dev \
     \
     && rm -rf /var/lib/apt/lists/* \
     \
