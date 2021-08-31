@@ -2,8 +2,8 @@ options {
 	directory "/var/cache/bind";
 
 	recursive-clients 10000;
-    resolver-query-timeout 30000;
-    max-clients-per-query 10000;
+	resolver-query-timeout 30000;
+	max-clients-per-query 10000;
 	max-cache-size 2000m;
 
 	// If there is a firewall between you and nameservers you want

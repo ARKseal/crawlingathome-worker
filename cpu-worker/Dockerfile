@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-dev \
         python3-tk \
         python3-pip \
+        python3-setuptools \
         python3-venv \
         tcl8.6-dev \
         tk8.6-dev \
@@ -35,6 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mv ./bin/protoc /usr/bin/protoc \
     && rm -rf protoc-3.17.3-linux-x86_64.zip bin include readme.txt \
     && cd /crawl \
+    \
+    && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/dockerfiles/dns_files/named.conf.options \
+    && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/dockerfiles/dns_files/resolv.conf \
+    && mv named.conf.options /etc/bind/named.conf.options \
+    && mv resolv.conf /etc/resolv.conf \
     \
     && python3 -m venv venv && . venv/bin/activate \
     && python3 -m pip install -U pip --no-cache-dir \
@@ -67,6 +73,7 @@ COPY --from=builder /crawl /crawl
 COPY --from=builder /usr/bin/protoc /usr/bin/protoc
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        bing9 \
         ca-certificates \
         libtinfo5 \
         python3 \
