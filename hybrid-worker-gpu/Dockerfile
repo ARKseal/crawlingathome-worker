@@ -28,10 +28,7 @@ RUN apt-get update && apt-get install -y git libjpeg-dev libopenjp2-7-dev libtif
     && pip3 install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html --no-cache-dir \
     \
     && pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir \
-    && pip3 install -r ./requirements.txt --no-cache-dir \
-    \
-    && yes | pip3 uninstall asks \
-    && pip3 install git+https://github.com/rvencu/asks --no-cache-dir
+    && pip3 install -r ./requirements.txt --no-cache-dir
 
 FROM nvidia/cuda:11.0.3-base-ubuntu20.04
 
@@ -49,4 +46,4 @@ ENV PYTHONHASHSEED=0
 ENV NAME="ARKseal"
 ENV PATH="/crawl/venv/bin:$PATH"
 
-CMD nice python3 -u crawlingathome.py --name $NAME
+CMD nice python3 -u crawlingathome.py --name $NAME --docker
