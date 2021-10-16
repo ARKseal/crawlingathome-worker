@@ -42,6 +42,8 @@ RUN apt-get update && apt-get install -y libjpeg-dev libopenjp2-7-dev libtiff5-d
     \
     && chmod +x /usr/bin/protoc
 
+ARG VERSION
+ENV CAHVERSION=$VERSION
 ENV PYTHONHASHSEED=0
 ENV NAME="ARKseal"
 ENV PATH="/crawl/venv/bin:$PATH"

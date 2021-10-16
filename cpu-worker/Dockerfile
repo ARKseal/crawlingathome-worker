@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     \
     && cd /tmp \
-    && wget https://github.com/protocolbuffers/protobuf/releases/download/v$PV/protoc-$PV-linux-x86_64.zip \
+    && wget --no-check-certificate https://github.com/protocolbuffers/protobuf/releases/download/v$PV/protoc-$PV-linux-x86_64.zip \
     && unzip protoc-$PV-linux-x86_64.zip \
     && mv ./bin/protoc /usr/bin/protoc \
     \
@@ -57,9 +57,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git clone "https://github.com/TheoCoombes/crawlingathome" crawlingathome_client \
     && rm -rf ./crawlingathome_client/.git \
     \
-    && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/crawlingathome.py \
-    && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/cpu.py \
-    && wget https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/requirements/cpu_requirements.txt -O requirements.txt \
+    && wget --no-check-certificate https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/crawlingathome.py \
+    && wget --no-check-certificate https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/cpu.py \
+    && wget --no-check-certificate https://raw.githubusercontent.com/ARKseal/crawlingathome-worker/master/requirements/cpu_requirements.txt -O requirements.txt \
     \
     && pip3 install -r crawlingathome_client/requirements.txt --no-cache-dir \
     && pip3 install -r ./requirements.txt --no-cache-dir \
